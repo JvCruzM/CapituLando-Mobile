@@ -8,10 +8,12 @@ import { QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { queryClient } from "../shared/api/query-client";
 import { lightTheme, darkTheme } from "../shared/theme/theme";
 import { useUIStore } from "../shared/store/ui-store";
+import { useAuthStore } from "../features/auth/session";
 
 export default function RootLayout() {
   const system = useColorScheme();
   const mode = useUIStore((state) => state.themeMode);
+  const expiresAt = useAuthStore((state) => state.session?.expiresAt);
   const dark = mode === "dark" || (mode === "system" && system === "dark");
   const theme = dark ? darkTheme : lightTheme;
   useEffect(() => {
@@ -20,6 +22,17 @@ export default function RootLayout() {
     );
     return () => subscription.remove();
   }, []);
+  useEffect(() => {
+    if (expiresAt === undefined) return;
+    const timer = setTimeout(
+      () => {
+        const state = useAuthStore.getState();
+        if (state.session?.expiresAt === expiresAt) state.clearSession();
+      },
+      Math.min(2_147_483_647, Math.max(0, expiresAt - Date.now())),
+    );
+    return () => clearTimeout(timer);
+  }, [expiresAt]);
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
@@ -34,6 +47,10 @@ export default function RootLayout() {
           >
             <Stack.Screen name="index" options={{ title: "CapituLando" }} />
             <Stack.Screen name="sobre" options={{ title: "Sobre" }} />
+            <Stack.Protected guard={expiresAt === undefined}>
+              <Stack.Screen name="entrar" options={{ title: "Entrar" }} />
+              <Stack.Screen name="cadastro" options={{ title: "Cadastro" }} />
+            </Stack.Protected>
           </Stack>
         </PaperProvider>
       </QueryClientProvider>
