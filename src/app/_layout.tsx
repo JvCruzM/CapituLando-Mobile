@@ -109,6 +109,10 @@ function AppLayout() {
           }}
         >
           <Stack.Screen name="index" options={{ title: "CapituLando" }} />
+          <Stack.Screen
+            name="enciclopedia"
+            options={{ title: "Enciclopédia & Cronologia" }}
+          />
           <Stack.Screen name="sobre" options={{ title: "Sobre" }} />
           <Stack.Screen
             name="recuperar-senha"

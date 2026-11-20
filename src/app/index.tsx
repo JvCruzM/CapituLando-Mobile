@@ -26,6 +26,13 @@ export default function HomeScreen() {
       <Text variant="bodyLarge">
         Seu espaço para escrever e construir universos, agora no celular.
       </Text>
+      <Button
+        mode="contained-tonal"
+        icon="book-open-page-variant"
+        onPress={() => router.push("/enciclopedia")}
+      >
+        Enciclopédia, Personagens & Cronologia
+      </Button>
       {session ? (
         <>
           <Text variant="titleMedium">
