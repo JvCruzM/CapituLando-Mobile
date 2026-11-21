@@ -8,6 +8,8 @@ export type EncyclopediaCategory =
   | "theme";
 
 export interface EncyclopediaItem {
+  editable?: boolean;
+  source?: Record<string, unknown>;
   id: string;
   category: EncyclopediaCategory;
   name: string;

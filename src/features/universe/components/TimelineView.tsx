@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useUniverseStore } from "../universe-store";
+import { useUniverseStore, useUniverseStats } from "../universe-store";
 import { TIMELINE_IMPORTANCE_COLORS } from "../constants";
 import type { TimelineEventItem } from "../types";
 
@@ -16,7 +16,7 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
   const selectedEra = useUniverseStore((state) => state.selectedEra);
   const setSelectedEra = useUniverseStore((state) => state.setSelectedEra);
   const searchQuery = useUniverseStore((state) => state.searchQuery);
-  const stats = useUniverseStore((state) => state.getStats());
+  const stats = useUniverseStats();
 
   // Distinct Eras list
   const eras = useMemo(() => {
@@ -83,9 +83,7 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
             <Chip
               key={era}
               selected={selectedEra === era}
-              onPress={() =>
-                setSelectedEra(selectedEra === era ? "all" : era)
-              }
+              onPress={() => setSelectedEra(selectedEra === era ? "all" : era)}
               style={styles.pill}
               icon="calendar"
             >
@@ -107,8 +105,8 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
             Nenhum evento cronológico encontrado
           </Text>
           <Text variant="bodySmall" style={styles.emptySubtitle}>
-            Ajuste os filtros de busca ou adicione marcos históricos para criar a
-            linha do tempo do seu mundo.
+            Ajuste os filtros de busca ou adicione marcos históricos para criar
+            a linha do tempo do seu mundo.
           </Text>
         </Surface>
       ) : (
@@ -160,15 +158,18 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
                         styles.card,
                         {
                           backgroundColor: theme.colors.surface,
-                          borderColor:
-                            theme.colors.outlineVariant ?? "#e0d8dd",
+                          borderColor: theme.colors.outlineVariant ?? "#e0d8dd",
                         },
                       ]}
                       elevation={1}
                     >
                       <Card.Content style={styles.cardContent}>
                         <View style={styles.cardTopRow}>
-                          <Chip icon="calendar-clock" compact style={styles.dateBadge}>
+                          <Chip
+                            icon="calendar-clock"
+                            compact
+                            style={styles.dateBadge}
+                          >
                             {event.dateDisplay}
                           </Chip>
                           <Chip
@@ -204,7 +205,11 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
 
                         <View style={styles.bottomMeta}>
                           {event.location ? (
-                            <Chip icon="map-marker" compact style={styles.metaChip}>
+                            <Chip
+                              icon="map-marker"
+                              compact
+                              style={styles.metaChip}
+                            >
                               {event.location}
                             </Chip>
                           ) : null}

@@ -109,10 +109,6 @@ function AppLayout() {
           }}
         >
           <Stack.Screen name="index" options={{ title: "CapituLando" }} />
-          <Stack.Screen
-            name="enciclopedia"
-            options={{ title: "Enciclopédia & Cronologia" }}
-          />
           <Stack.Screen name="sobre" options={{ title: "Sobre" }} />
           <Stack.Screen
             name="recuperar-senha"
@@ -123,6 +119,10 @@ function AppLayout() {
             options={{ title: "Reenviar confirmação" }}
           />
           <Stack.Protected guard={expiresAt !== undefined}>
+            <Stack.Screen
+              name="enciclopedia"
+              options={{ title: "Enciclopédia & Cronologia" }}
+            />
             <Stack.Screen name="(account)" options={{ headerShown: false }} />
           </Stack.Protected>
           <Stack.Screen

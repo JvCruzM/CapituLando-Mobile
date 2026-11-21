@@ -20,9 +20,15 @@ import type {
   TimelineImportance,
 } from "../types";
 import { ENCYCLOPEDIA_CATEGORIES, CHARACTER_ROLES } from "../constants";
+import { editableCategories, emptyAttributes } from "../services/universe-api";
+import { accountErrorMessage } from "../../../shared/api/account";
 
 export type FormMode =
-  | { mode: "create"; targetType: "encyclopedia" | "character" | "timeline"; defaultCategory?: EncyclopediaCategory }
+  | {
+      mode: "create";
+      targetType: "encyclopedia" | "character" | "timeline";
+      defaultCategory?: EncyclopediaCategory;
+    }
   | { mode: "edit"; targetType: "encyclopedia"; item: EncyclopediaItem }
   | { mode: "edit"; targetType: "character"; item: CharacterItem }
   | { mode: "edit"; targetType: "timeline"; item: TimelineEventItem }
@@ -35,15 +41,15 @@ interface CreateEditModalProps {
   onSaveEncyclopedia: (
     item: Omit<EncyclopediaItem, "id" | "createdAt" | "updatedAt">,
     id?: string,
-  ) => void;
+  ) => void | Promise<void>;
   onSaveCharacter: (
     item: Omit<CharacterItem, "id" | "createdAt" | "updatedAt">,
     id?: string,
-  ) => void;
+  ) => void | Promise<void>;
   onSaveTimeline: (
     item: Omit<TimelineEventItem, "id" | "createdAt" | "updatedAt">,
     id?: string,
-  ) => void;
+  ) => void | Promise<void>;
 }
 
 export function CreateEditModal({
@@ -61,10 +67,9 @@ export function CreateEditModal({
   const [encName, setEncName] = useState("");
   const [encSubtitle, setEncSubtitle] = useState("");
   const [encDescription, setEncDescription] = useState("");
-  const [encAttrKey1, setEncAttrKey1] = useState("");
-  const [encAttrVal1, setEncAttrVal1] = useState("");
-  const [encAttrKey2, setEncAttrKey2] = useState("");
-  const [encAttrVal2, setEncAttrVal2] = useState("");
+  const [encAttributes, setEncAttributes] = useState<Record<string, string>>(
+    {},
+  );
   const [encTags, setEncTags] = useState("");
 
   // Character Form Fields
@@ -88,7 +93,8 @@ export function CreateEditModal({
   const [timeEra, setTimeEra] = useState("");
   const [timeDateOrder, setTimeDateOrder] = useState("100");
   const [timeDateDisplay, setTimeDateDisplay] = useState("");
-  const [timeImportance, setTimeImportance] = useState<TimelineImportance>("Maior");
+  const [timeImportance, setTimeImportance] =
+    useState<TimelineImportance>("Maior");
   const [timeSummary, setTimeSummary] = useState("");
   const [timeDescription, setTimeDescription] = useState("");
   const [timeLocation, setTimeLocation] = useState("");
@@ -96,6 +102,7 @@ export function CreateEditModal({
   const [timeConsequences, setTimeConsequences] = useState("");
 
   const [validationError, setValidationError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!formMode) return;
@@ -108,21 +115,14 @@ export function CreateEditModal({
         setEncName(it.name);
         setEncSubtitle(it.subtitle);
         setEncDescription(it.description);
-        const entries = Object.entries(it.attributes || {});
-        setEncAttrKey1(entries[0]?.[0] ?? "");
-        setEncAttrVal1(entries[0]?.[1] ?? "");
-        setEncAttrKey2(entries[1]?.[0] ?? "");
-        setEncAttrVal2(entries[1]?.[1] ?? "");
+        setEncAttributes({ ...it.attributes });
         setEncTags(it.tags ? it.tags.join(", ") : "");
       } else {
         setEncCategory(formMode.defaultCategory ?? "races");
         setEncName("");
         setEncSubtitle("");
         setEncDescription("");
-        setEncAttrKey1("Origem / Habitat");
-        setEncAttrVal1("");
-        setEncAttrKey2("Poder / Riqueza");
-        setEncAttrVal2("");
+        setEncAttributes(emptyAttributes(formMode.defaultCategory ?? "races"));
         setEncTags("");
       }
     } else if (formMode.targetType === "character") {
@@ -169,7 +169,9 @@ export function CreateEditModal({
         setTimeSummary(t.summary);
         setTimeDescription(t.description);
         setTimeLocation(t.location ?? "");
-        setTimeCharacters(t.charactersInvolved ? t.charactersInvolved.join(", ") : "");
+        setTimeCharacters(
+          t.charactersInvolved ? t.charactersInvolved.join(", ") : "",
+        );
         setTimeConsequences(t.consequences ?? "");
       } else {
         setTimeTitle("");
@@ -193,115 +195,118 @@ export function CreateEditModal({
     formMode.targetType === "encyclopedia"
       ? `${isEdit ? "Editar" : "Novo Item na"} Enciclopédia`
       : formMode.targetType === "character"
-      ? `${isEdit ? "Editar" : "Novo"} Personagem`
-      : `${isEdit ? "Editar" : "Novo Evento da"} Cronologia`;
+        ? `${isEdit ? "Editar" : "Novo"} Personagem`
+        : `${isEdit ? "Editar" : "Novo Evento da"} Cronologia`;
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    if (saving) return;
     setValidationError("");
+    setSaving(true);
+    try {
+      if (formMode?.targetType === "encyclopedia") {
+        if (!encName.trim()) {
+          setValidationError("Informe o nome do item.");
+          return;
+        }
+        if ([...encName.trim()].length > 100) {
+          setValidationError("O nome deve ter no máximo 100 caracteres.");
+          return;
+        }
+        const attributes = { ...encAttributes };
+        const tags = encTags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
 
-    if (formMode?.targetType === "encyclopedia") {
-      if (!encName.trim()) {
-        setValidationError("Informe o nome do item.");
-        return;
-      }
-      if (!encDescription.trim()) {
-        setValidationError("Escreva uma breve descrição ou lore.");
-        return;
-      }
-      const attributes: Record<string, string> = {};
-      if (encAttrKey1.trim() && encAttrVal1.trim()) {
-        attributes[encAttrKey1.trim()] = encAttrVal1.trim();
-      }
-      if (encAttrKey2.trim() && encAttrVal2.trim()) {
-        attributes[encAttrKey2.trim()] = encAttrVal2.trim();
-      }
-      const tags = encTags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
+        await onSaveEncyclopedia(
+          {
+            category: encCategory,
+            name: encName.trim(),
+            subtitle: encSubtitle.trim() || encName.trim(),
+            description: encDescription.trim(),
+            attributes,
+            tags,
+          },
+          isEdit ? (formMode as { item: EncyclopediaItem }).item.id : undefined,
+        );
+        onDismiss();
+      } else if (formMode?.targetType === "character") {
+        if (!charName.trim()) {
+          setValidationError("Informe o nome do personagem.");
+          return;
+        }
+        if (!charRace.trim()) {
+          setValidationError("Informe a raça ou povo do personagem.");
+          return;
+        }
+        if (!charMotivation.trim()) {
+          setValidationError("Informe a motivação principal.");
+          return;
+        }
 
-      onSaveEncyclopedia(
-        {
-          category: encCategory,
-          name: encName.trim(),
-          subtitle: encSubtitle.trim() || encName.trim(),
-          description: encDescription.trim(),
-          attributes,
-          tags,
-        },
-        isEdit ? (formMode as { item: EncyclopediaItem }).item.id : undefined,
-      );
-      onDismiss();
-    } else if (formMode?.targetType === "character") {
-      if (!charName.trim()) {
-        setValidationError("Informe o nome do personagem.");
-        return;
-      }
-      if (!charRace.trim()) {
-        setValidationError("Informe a raça ou povo do personagem.");
-        return;
-      }
-      if (!charMotivation.trim()) {
-        setValidationError("Informe a motivação principal.");
-        return;
-      }
+        const traits = charTraits
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean);
 
-      const traits = charTraits
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
+        await onSaveCharacter(
+          {
+            name: charName.trim(),
+            alias: charAlias.trim() || undefined,
+            role: charRole,
+            race: charRace.trim(),
+            organization: charOrg.trim() || undefined,
+            occupation: charOccupation.trim() || "Aventureiro / Cidadão",
+            archetype: charArchetype.trim() || "Personagem",
+            appearance: charAppearance.trim() || "Não especificada",
+            personality: charPersonality.trim() || "Não especificada",
+            motivation: charMotivation.trim(),
+            internalConflict: charConflict.trim() || "",
+            backstory: charBackstory.trim() || "Em desenvolvimento.",
+            traits,
+            quote: charQuote.trim() || undefined,
+          },
+          isEdit ? (formMode as { item: CharacterItem }).item.id : undefined,
+        );
+        onDismiss();
+      } else if (formMode?.targetType === "timeline") {
+        if (!timeTitle.trim()) {
+          setValidationError("Informe o título do evento histórico.");
+          return;
+        }
+        if (!timeSummary.trim()) {
+          setValidationError("Informe o resumo do evento.");
+          return;
+        }
 
-      onSaveCharacter(
-        {
-          name: charName.trim(),
-          alias: charAlias.trim() || undefined,
-          role: charRole,
-          race: charRace.trim(),
-          organization: charOrg.trim() || undefined,
-          occupation: charOccupation.trim() || "Aventureiro / Cidadão",
-          archetype: charArchetype.trim() || "Personagem",
-          appearance: charAppearance.trim() || "Não especificada",
-          personality: charPersonality.trim() || "Não especificada",
-          motivation: charMotivation.trim(),
-          internalConflict: charConflict.trim() || "",
-          backstory: charBackstory.trim() || "Em desenvolvimento.",
-          traits,
-          quote: charQuote.trim() || undefined,
-        },
-        isEdit ? (formMode as { item: CharacterItem }).item.id : undefined,
-      );
-      onDismiss();
-    } else if (formMode?.targetType === "timeline") {
-      if (!timeTitle.trim()) {
-        setValidationError("Informe o título do evento histórico.");
-        return;
+        const charsInvolved = timeCharacters
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean);
+
+        await onSaveTimeline(
+          {
+            title: timeTitle.trim(),
+            era: timeEra.trim() || "Era Atual",
+            dateOrder: parseInt(timeDateOrder, 10) || 100,
+            dateDisplay: timeDateDisplay.trim() || "Data não registrada",
+            importance: timeImportance,
+            summary: timeSummary.trim(),
+            description: timeDescription.trim() || timeSummary.trim(),
+            location: timeLocation.trim() || undefined,
+            charactersInvolved: charsInvolved,
+            consequences: timeConsequences.trim() || undefined,
+          },
+          isEdit
+            ? (formMode as { item: TimelineEventItem }).item.id
+            : undefined,
+        );
+        onDismiss();
       }
-      if (!timeSummary.trim()) {
-        setValidationError("Informe o resumo do evento.");
-        return;
-      }
-
-      const charsInvolved = timeCharacters
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
-
-      onSaveTimeline(
-        {
-          title: timeTitle.trim(),
-          era: timeEra.trim() || "Era Atual",
-          dateOrder: parseInt(timeDateOrder, 10) || 100,
-          dateDisplay: timeDateDisplay.trim() || "Data não registrada",
-          importance: timeImportance,
-          summary: timeSummary.trim(),
-          description: timeDescription.trim() || timeSummary.trim(),
-          location: timeLocation.trim() || undefined,
-          charactersInvolved: charsInvolved,
-          consequences: timeConsequences.trim() || undefined,
-        },
-        isEdit ? (formMode as { item: TimelineEventItem }).item.id : undefined,
-      );
-      onDismiss();
+    } catch (cause) {
+      setValidationError(accountErrorMessage(cause));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -309,7 +314,8 @@ export function CreateEditModal({
     <Portal>
       <Dialog
         visible={visible}
-        onDismiss={onDismiss}
+        dismissable={!saving}
+        onDismiss={saving ? undefined : onDismiss}
         style={[styles.dialog, { backgroundColor: theme.colors.surface }]}
       >
         <Dialog.Title style={styles.dialogTitle}>{titleText}</Dialog.Title>
@@ -329,12 +335,18 @@ export function CreateEditModal({
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.categoryScroll}
                 >
-                  {ENCYCLOPEDIA_CATEGORIES.map((cat) => (
+                  {ENCYCLOPEDIA_CATEGORIES.filter((cat) =>
+                    editableCategories.some((key) => key === cat.key),
+                  ).map((cat) => (
                     <Chip
                       key={cat.key}
                       icon={cat.icon}
                       selected={encCategory === cat.key}
-                      onPress={() => setEncCategory(cat.key)}
+                      disabled={isEdit || saving}
+                      onPress={() => {
+                        setEncCategory(cat.key);
+                        setEncAttributes(emptyAttributes(cat.key));
+                      }}
                       style={styles.categoryChip}
                     >
                       {cat.label}
@@ -345,6 +357,8 @@ export function CreateEditModal({
                 <TextInput
                   mode="outlined"
                   label="Nome da Entrada *"
+                  accessibilityLabel="Nome da Entrada"
+                  disabled={saving}
                   value={encName}
                   onChangeText={setEncName}
                   placeholder="Ex: Sylfos Celestiais, Astrolábio..."
@@ -353,16 +367,9 @@ export function CreateEditModal({
 
                 <TextInput
                   mode="outlined"
-                  label="Subtítulo / Breve Identificador"
-                  value={encSubtitle}
-                  onChangeText={setEncSubtitle}
-                  placeholder="Ex: Povo Primordial dos Picos Nevados"
-                  style={styles.input}
-                />
-
-                <TextInput
-                  mode="outlined"
-                  label="Descrição & Lore Completo *"
+                  label="Descrição & Lore Completo"
+                  accessibilityLabel="Descrição da entrada"
+                  disabled={saving}
                   multiline
                   numberOfLines={4}
                   value={encDescription}
@@ -372,49 +379,26 @@ export function CreateEditModal({
                 />
 
                 <Text variant="labelLarge" style={styles.fieldLabel}>
-                  Atributos Principais:
+                  Atributos e características:
                 </Text>
-                <View style={styles.attrRow}>
+                {Object.entries(encAttributes).map(([label, value]) => (
                   <TextInput
+                    key={label}
                     mode="outlined"
-                    label="Propriedade 1"
-                    value={encAttrKey1}
-                    onChangeText={setEncAttrKey1}
-                    style={styles.attrInput}
+                    label={label}
+                    accessibilityLabel={label}
+                    value={value}
+                    multiline
+                    disabled={saving}
+                    onChangeText={(next) =>
+                      setEncAttributes((current) => ({
+                        ...current,
+                        [label]: next,
+                      }))
+                    }
+                    style={styles.input}
                   />
-                  <TextInput
-                    mode="outlined"
-                    label="Valor 1"
-                    value={encAttrVal1}
-                    onChangeText={setEncAttrVal1}
-                    style={styles.attrInput}
-                  />
-                </View>
-                <View style={styles.attrRow}>
-                  <TextInput
-                    mode="outlined"
-                    label="Propriedade 2"
-                    value={encAttrKey2}
-                    onChangeText={setEncAttrKey2}
-                    style={styles.attrInput}
-                  />
-                  <TextInput
-                    mode="outlined"
-                    label="Valor 2"
-                    value={encAttrVal2}
-                    onChangeText={setEncAttrVal2}
-                    style={styles.attrInput}
-                  />
-                </View>
-
-                <TextInput
-                  mode="outlined"
-                  label="Tags (separadas por vírgula)"
-                  value={encTags}
-                  onChangeText={setEncTags}
-                  placeholder="Ex: Magia, Raro, Relíquia"
-                  style={styles.input}
-                />
+                ))}
               </View>
             )}
 
@@ -610,7 +594,9 @@ export function CreateEditModal({
                     <Text variant="labelSmall">Grau de Impacto:</Text>
                     <SegmentedButtons
                       value={timeImportance}
-                      onValueChange={(val) => setTimeImportance(val as TimelineImportance)}
+                      onValueChange={(val) =>
+                        setTimeImportance(val as TimelineImportance)
+                      }
                       buttons={[
                         { value: "Menor", label: "Menor" },
                         { value: "Maior", label: "Maior" },
@@ -683,8 +669,16 @@ export function CreateEditModal({
         </Dialog.ScrollArea>
 
         <Dialog.Actions style={styles.actions}>
-          <Button onPress={onDismiss}>Cancelar</Button>
-          <Button mode="contained" onPress={handleSubmit} style={{ marginLeft: 8 }}>
+          <Button disabled={saving} onPress={onDismiss}>
+            Cancelar
+          </Button>
+          <Button
+            mode="contained"
+            disabled={saving}
+            loading={saving}
+            onPress={() => void handleSubmit()}
+            style={{ marginLeft: 8 }}
+          >
             Salvar
           </Button>
         </Dialog.Actions>

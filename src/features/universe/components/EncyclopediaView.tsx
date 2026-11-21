@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useUniverseStore } from "../universe-store";
+import { useUniverseStore, useUniverseStats } from "../universe-store";
 import { ENCYCLOPEDIA_CATEGORIES } from "../constants";
 import type { EncyclopediaCategory, EncyclopediaItem } from "../types";
 
@@ -18,7 +18,7 @@ export function EncyclopediaView({ onSelectItem }: EncyclopediaViewProps) {
     (state) => state.setSelectedCategory,
   );
   const searchQuery = useUniverseStore((state) => state.searchQuery);
-  const stats = useUniverseStore((state) => state.getStats());
+  const stats = useUniverseStats();
 
   const filteredItems = useMemo(() => {
     return items.filter((item) => {
@@ -157,8 +157,7 @@ export function EncyclopediaView({ onSelectItem }: EncyclopediaViewProps) {
                         style={[
                           styles.catBadge,
                           {
-                            backgroundColor:
-                              (meta?.color ?? "#704563") + "20",
+                            backgroundColor: (meta?.color ?? "#704563") + "20",
                           },
                         ]}
                         textStyle={{
