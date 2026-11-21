@@ -114,6 +114,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
     return (
       <AccountQueryStatus
         error={stories.error}
+        fetchStatus={stories.fetchStatus}
         retry={() => void stories.refetch()}
       />
     );
@@ -134,6 +135,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
     return (
       <AccountQueryStatus
         error={snapshot.error}
+        fetchStatus={snapshot.fetchStatus}
         retry={() => void snapshot.refetch()}
       />
     );

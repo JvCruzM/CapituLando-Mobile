@@ -11,6 +11,7 @@ import { lightTheme, darkTheme } from "../shared/theme/theme";
 import { useUIStore } from "../shared/store/ui-store";
 import { useAuthStore } from "../features/auth/session";
 import { useAccountPreferences } from "../features/settings/hooks/useAccountPreferences";
+import { useSessionLifecycle } from "../features/auth/hooks/useSessionLifecycle";
 
 const paperSettings = {
   icon: (props: React.ComponentProps<typeof MaterialCommunityIcons>) => (
@@ -27,6 +28,7 @@ export default function RootLayout() {
 }
 
 function AppLayout() {
+  useSessionLifecycle();
   useAccountPreferences();
   const system = useColorScheme();
   const mode = useUIStore((state) => state.themeMode);
@@ -55,27 +57,11 @@ function AppLayout() {
   }, [baseTheme, fontSize]);
 
   useEffect(() => {
-    useAuthStore.getState().initialize();
-  }, []);
-
-  useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) =>
       focusManager.setFocused(state === "active"),
     );
     return () => subscription.remove();
   }, []);
-
-  useEffect(() => {
-    if (expiresAt === undefined) return;
-    const timer = setTimeout(
-      () => {
-        const state = useAuthStore.getState();
-        if (state.session?.expiresAt === expiresAt) state.clearSession();
-      },
-      Math.min(2_147_483_647, Math.max(0, expiresAt - Date.now())),
-    );
-    return () => clearTimeout(timer);
-  }, [expiresAt]);
 
   if (!isInitialized) {
     return (

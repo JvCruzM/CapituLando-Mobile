@@ -7,7 +7,9 @@ interface Credentials {
 }
 
 export interface Session {
+  sessionId: string;
   accessToken: string;
+  refreshToken: string;
   expiresAt: number;
   user: { id: string; displayName: string };
 }
@@ -19,7 +21,16 @@ export async function signIn(
   const { data } = await transport.post("/api/auth/login", credentials, {
     signal,
   });
+  return sessionFromResponse(data);
+}
+
+export function sessionFromResponse(value: unknown): Session {
+  const data = value as Partial<Session & { expiresInSeconds: number }> | null;
   if (
+    typeof data?.sessionId !== "string" ||
+    !data.sessionId.trim() ||
+    typeof data?.refreshToken !== "string" ||
+    data.refreshToken.length < 20 ||
     typeof data?.accessToken !== "string" ||
     !data.accessToken.trim() ||
     typeof data?.expiresInSeconds !== "number" ||
@@ -32,10 +43,47 @@ export async function signIn(
     throw new Error("A API devolveu uma sessão inválida.");
   }
   return {
+    sessionId: data.sessionId,
     accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
     expiresAt: Date.now() + data.expiresInSeconds * 1000,
     user: { id: data.user.id, displayName: data.user.displayName },
   };
+}
+
+export function isStoredSession(value: unknown): value is Session {
+  const data = value as Partial<Session> | null;
+  return Boolean(
+    data &&
+    typeof data.sessionId === "string" &&
+    data.sessionId &&
+    typeof data.accessToken === "string" &&
+    data.accessToken &&
+    typeof data.refreshToken === "string" &&
+    data.refreshToken.length >= 20 &&
+    typeof data.expiresAt === "number" &&
+    Number.isFinite(data.expiresAt) &&
+    typeof data.user?.id === "string" &&
+    data.user.id &&
+    typeof data.user.displayName === "string",
+  );
+}
+
+export async function renewSession(session: Session) {
+  const { data } = await transport.post("/api/auth/refresh", {
+    refreshToken: session.refreshToken,
+  });
+  return sessionFromResponse(data);
+}
+
+export async function revokeSession(session: Session) {
+  await transport.post(
+    "/api/auth/logout",
+    { refreshToken: session.refreshToken },
+    {
+      headers: { Authorization: `Bearer ${session.accessToken}` },
+    },
+  );
 }
 
 export async function registerAccount(
