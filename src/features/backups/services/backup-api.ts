@@ -1,0 +1,45 @@
+import { accountRequest } from "../../../shared/api/account";
+
+export interface Backup {
+  schemaVersion: 1;
+  records: Record<string, unknown[]>;
+  workspace: Record<string, unknown>;
+}
+
+export function parseBackup(text: string): Backup {
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error("O arquivo não contém um JSON válido.");
+  }
+  if (
+    value?.schemaVersion !== 1 ||
+    !value.records ||
+    typeof value.records !== "object" ||
+    Array.isArray(value.records) ||
+    !Object.values(value.records).every(Array.isArray) ||
+    !value.workspace ||
+    typeof value.workspace !== "object" ||
+    Array.isArray(value.workspace)
+  ) {
+    throw new Error("Formato de backup incompatível.");
+  }
+  return value;
+}
+
+export const exportAccountBackup = () =>
+  accountRequest<Backup>({ url: "/api/backup" });
+export const restoreAccountBackup = (data: Backup) =>
+  accountRequest<void>({
+    url: "/api/backup",
+    method: "POST",
+    data,
+    timeout: 60000,
+  });
+export const clearAccountData = () =>
+  accountRequest<void>({
+    url: "/api/backup",
+    method: "DELETE",
+    timeout: 60000,
+  });

@@ -45,6 +45,20 @@ export async function registerAccount(
   await transport.post("/api/auth/register", credentials, { signal });
 }
 
+export async function requestAccountEmail(
+  mode: "recover" | "resend",
+  email: string,
+  signal: AbortSignal,
+) {
+  const path = mode === "recover" ? "forgot-password" : "resend-verification";
+  const { data } = await transport.post(
+    `/api/auth/${path}`,
+    { email },
+    { signal },
+  );
+  return data as { message: string };
+}
+
 export async function verifyAccount(token: string, signal: AbortSignal) {
   await transport.post("/api/auth/verify-email", { token }, { signal });
 }
@@ -63,7 +77,7 @@ export async function resetAccountPassword(
 
 export function authErrorMessage(
   error: unknown,
-  mode: "login" | "register" | "verify" | "reset",
+  mode: "login" | "register" | "verify" | "reset" | "recover" | "resend",
 ) {
   if (!axios.isAxiosError(error)) {
     return error instanceof Error
@@ -87,6 +101,8 @@ export function authErrorMessage(
     register: "Não foi possível criar a conta. Tente novamente.",
     verify: "Não foi possível confirmar seu e-mail. Tente novamente.",
     reset: "Não foi possível redefinir a senha. Tente novamente.",
+    recover: "Não foi possível solicitar a recuperação. Tente novamente.",
+    resend: "Não foi possível solicitar a confirmação. Tente novamente.",
   };
   return fallback[mode];
 }

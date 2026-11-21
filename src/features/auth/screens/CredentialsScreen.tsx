@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "expo-router";
+import { Link, useLocalSearchParams } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { Button, HelperText, Text, TextInput } from "react-native-paper";
 import { Screen } from "../../../shared/components/Screen";
@@ -15,6 +15,7 @@ const usernamePattern = /^[A-Za-z0-9._-]{3,50}$/;
 
 export function CredentialsScreen({ mode }: { mode: "login" | "register" }) {
   const registration = mode === "register";
+  const { emailAlterado } = useLocalSearchParams<{ emailAlterado?: string }>();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -85,6 +86,9 @@ export function CredentialsScreen({ mode }: { mode: "login" | "register" }) {
         <Link href="/entrar" replace asChild>
           <Button mode="contained">Ir para o login</Button>
         </Link>
+        <Link href="/reenviar-confirmacao" asChild>
+          <Button>Reenviar confirmação</Button>
+        </Link>
       </Screen>
     );
   }
@@ -98,6 +102,9 @@ export function CredentialsScreen({ mode }: { mode: "login" | "register" }) {
       {!registration && (
         <Text variant="bodyLarge">Use os dados da sua conta CapituLando.</Text>
       )}
+      {!registration && emailAlterado === "1" ? (
+        <Text>Confirme o novo e-mail antes de entrar novamente.</Text>
+      ) : null}
       <View style={styles.fields}>
         {registration && (
           <TextInput
@@ -171,6 +178,16 @@ export function CredentialsScreen({ mode }: { mode: "login" | "register" }) {
           {registration ? "Já tenho uma conta" : "Criar conta"}
         </Button>
       </Link>
+      {!registration ? (
+        <>
+          <Link href="/recuperar-senha" asChild>
+            <Button disabled={busy}>Esqueci minha senha</Button>
+          </Link>
+          <Link href="/reenviar-confirmacao" asChild>
+            <Button disabled={busy}>Reenviar confirmação</Button>
+          </Link>
+        </>
+      ) : null}
     </Screen>
   );
 }

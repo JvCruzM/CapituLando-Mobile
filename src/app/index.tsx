@@ -1,12 +1,19 @@
 import { Image } from "react-native";
+import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { Button, Text } from "react-native-paper";
 import { Screen } from "../shared/components/Screen";
 import { useAuthStore } from "../features/auth/session";
+import { loadProfile } from "../features/profile/services/profile-api";
 
 export default function HomeScreen() {
   const session = useAuthStore((state) => state.session);
   const clearSession = useAuthStore((state) => state.clearSession);
+  const profile = useQuery({
+    queryKey: ["profile", session?.user.id ?? ""],
+    queryFn: ({ signal }) => loadProfile(signal),
+    enabled: Boolean(session),
+  });
   return (
     <Screen>
       <Image
@@ -21,7 +28,14 @@ export default function HomeScreen() {
       </Text>
       {session ? (
         <>
-          <Text variant="titleMedium">Olá, {session.user.displayName}</Text>
+          <Text variant="titleMedium">
+            Olá, {profile.data?.displayName ?? session.user.displayName}
+          </Text>
+          <Button onPress={() => router.push("/perfil")}>Meu perfil</Button>
+          <Button onPress={() => router.push("/configuracoes")}>
+            Configurações
+          </Button>
+          <Button onPress={() => router.push("/backups")}>Backups</Button>
           <Button onPress={clearSession}>Encerrar sessão no app</Button>
         </>
       ) : (
