@@ -45,7 +45,26 @@ export async function registerAccount(
   await transport.post("/api/auth/register", credentials, { signal });
 }
 
-export function authErrorMessage(error: unknown, mode: "login" | "register") {
+export async function verifyAccount(token: string, signal: AbortSignal) {
+  await transport.post("/api/auth/verify-email", { token }, { signal });
+}
+
+export async function resetAccountPassword(
+  token: string,
+  newPassword: string,
+  signal: AbortSignal,
+) {
+  await transport.post(
+    "/api/auth/reset-password",
+    { token, newPassword },
+    { signal },
+  );
+}
+
+export function authErrorMessage(
+  error: unknown,
+  mode: "login" | "register" | "verify" | "reset",
+) {
   if (!axios.isAxiosError(error)) {
     return error instanceof Error
       ? error.message
@@ -63,7 +82,11 @@ export function authErrorMessage(error: unknown, mode: "login" | "register") {
   const message = response.data?.error?.message ?? response.data?.message;
   if (response.status < 500 && typeof message === "string" && message.trim())
     return message;
-  return mode === "login"
-    ? "Não foi possível entrar. Tente novamente."
-    : "Não foi possível criar a conta. Tente novamente.";
+  const fallback = {
+    login: "Não foi possível entrar. Tente novamente.",
+    register: "Não foi possível criar a conta. Tente novamente.",
+    verify: "Não foi possível confirmar seu e-mail. Tente novamente.",
+    reset: "Não foi possível redefinir a senha. Tente novamente.",
+  };
+  return fallback[mode];
 }

@@ -75,6 +75,14 @@ export default function RootLayout() {
           >
             <Stack.Screen name="index" options={{ title: "CapituLando" }} />
             <Stack.Screen name="sobre" options={{ title: "Sobre" }} />
+            <Stack.Screen
+              name="confirmar-email"
+              options={{ title: "Confirmar e-mail" }}
+            />
+            <Stack.Screen
+              name="redefinir-senha"
+              options={{ title: "Redefinir senha" }}
+            />
             <Stack.Protected guard={expiresAt === undefined}>
               <Stack.Screen name="entrar" options={{ title: "Entrar" }} />
               <Stack.Screen name="cadastro" options={{ title: "Cadastro" }} />
