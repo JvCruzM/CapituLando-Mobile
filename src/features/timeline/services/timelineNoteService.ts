@@ -1,79 +1,93 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  createEvent,
+  deleteEvent,
+  EventRecord,
+  listEvents,
+  updateEvent,
+} from "../../events/services/eventService";
 
-export interface TimelineFreeNote {
+export interface FreeChronologyEntry {
   id: string;
   storyId: string;
   eraLabel: string;
   title: string;
   content: string;
   order: number;
-  createdAt: string;
-  updatedAt: string;
+  locationId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-function storageKey(storyId: string): string {
-  return `@capitulando:timeline-notes:${storyId}`;
+export interface SaveFreeChronologyPayload {
+  eraLabel?: string | null;
+  title: string;
+  content?: string | null;
+  order?: number | null;
+  locationId?: string | null;
 }
 
-export async function listTimelineNotes(storyId: string): Promise<TimelineFreeNote[]> {
-  const raw = await AsyncStorage.getItem(storageKey(storyId));
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw) as TimelineFreeNote[];
-    return Array.isArray(parsed)
-      ? [...parsed].sort((a, b) => a.order - b.order)
-      : [];
-  } catch {
-    return [];
-  }
+function toFreeChronologyEntry(event: EventRecord, index: number): FreeChronologyEntry {
+  return {
+    id: event.id,
+    storyId: event.storyId,
+    eraLabel: event.chronologicalDate ?? "",
+    title: event.title,
+    content: event.description ?? "",
+    order: event.sequenceOrder ?? index + 1,
+    locationId: event.locationId ?? null,
+    createdAt: event.createdAt,
+    updatedAt: event.updatedAt,
+  };
 }
 
-export async function saveTimelineNote(
+export async function listFreeChronology(
   storyId: string,
-  note: Omit<TimelineFreeNote, "id" | "storyId" | "createdAt" | "updatedAt"> & { id?: string }
-): Promise<TimelineFreeNote[]> {
-  const current = await listTimelineNotes(storyId);
-  const now = new Date().toISOString();
-
-  let updated: TimelineFreeNote[];
-  if (note.id) {
-    updated = current.map((item) =>
-      item.id === note.id
-        ? {
-            ...item,
-            eraLabel: note.eraLabel,
-            title: note.title,
-            content: note.content,
-            order: note.order,
-            updatedAt: now,
-          }
-        : item
-    );
-  } else {
-    const created: TimelineFreeNote = {
-      id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      storyId,
-      eraLabel: note.eraLabel,
-      title: note.title,
-      content: note.content,
-      order: note.order,
-      createdAt: now,
-      updatedAt: now,
-    };
-    updated = [...current, created];
-  }
-
-  updated.sort((a, b) => a.order - b.order);
-  await AsyncStorage.setItem(storageKey(storyId), JSON.stringify(updated));
-  return updated;
+): Promise<FreeChronologyEntry[]> {
+  const events = await listEvents(storyId);
+  return events
+    .filter((event) => !event.chapterId)
+    .sort((a, b) => {
+      const orderA = a.sequenceOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.sequenceOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    })
+    .map(toFreeChronologyEntry);
 }
 
-export async function deleteTimelineNote(
+export async function createFreeChronologyEntry(
   storyId: string,
-  noteId: string
-): Promise<TimelineFreeNote[]> {
-  const current = await listTimelineNotes(storyId);
-  const updated = current.filter((item) => item.id !== noteId);
-  await AsyncStorage.setItem(storageKey(storyId), JSON.stringify(updated));
-  return updated;
+  payload: SaveFreeChronologyPayload,
+): Promise<FreeChronologyEntry> {
+  const created = await createEvent(storyId, {
+    title: payload.title,
+    description: payload.content ?? null,
+    chronologicalDate: payload.eraLabel ?? null,
+    sequenceOrder: payload.order ?? null,
+    locationId: payload.locationId ?? null,
+    chapterId: null,
+  });
+  return toFreeChronologyEntry(created, 0);
+}
+
+export async function updateFreeChronologyEntry(
+  storyId: string,
+  entryId: string,
+  payload: SaveFreeChronologyPayload,
+): Promise<FreeChronologyEntry> {
+  const updated = await updateEvent(storyId, entryId, {
+    title: payload.title,
+    description: payload.content ?? null,
+    chronologicalDate: payload.eraLabel ?? null,
+    sequenceOrder: payload.order ?? null,
+    locationId: payload.locationId ?? null,
+    chapterId: null,
+  });
+  return toFreeChronologyEntry(updated, 0);
+}
+
+export async function deleteFreeChronologyEntry(
+  storyId: string,
+  entryId: string,
+): Promise<void> {
+  await deleteEvent(storyId, entryId);
 }
