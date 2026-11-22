@@ -31,12 +31,13 @@ export function SessionConflictModal({ conflict, isDark, onResolve }: Props) {
           </View>
 
           <Text style={[styles.desc, { color: textMuted }]}>
-            Foi detectada uma alteração feita em outra sessão ativa. Escolha qual versão manter:
+            Foi detectada uma alteração feita em outra sessão ou dispositivo para este livro.
+            Escolha como deseja resolver:
           </Text>
 
           <View style={[styles.box, { backgroundColor: bgBox }]}>
             <Text style={[styles.boxLabel, { color: accent }]}>
-              Sessão Local ({countWords(conflict.local.content)} palavras)
+              Sessão Atual ({countWords(conflict.local.content)} palavras)
             </Text>
             <Text numberOfLines={3} style={[styles.boxText, { color: textPrimary }]}>
               {conflict.local.content || '(Sem texto)'}
@@ -45,7 +46,7 @@ export function SessionConflictModal({ conflict, isDark, onResolve }: Props) {
 
           <View style={[styles.box, { backgroundColor: bgBox }]}>
             <Text style={[styles.boxLabel, { color: accent }]}>
-              Outra Sessão ({countWords(conflict.remote.content)} palavras)
+              Outra Sessão / Servidor ({countWords(conflict.remote.content)} palavras)
             </Text>
             <Text numberOfLines={3} style={[styles.boxText, { color: textPrimary }]}>
               {conflict.remote.content || '(Sem texto)'}
@@ -56,7 +57,7 @@ export function SessionConflictModal({ conflict, isDark, onResolve }: Props) {
             style={[styles.btn, { backgroundColor: accent }]}
             onPress={() => onResolve('local')}
           >
-            <Text style={styles.btnLightText}>Manter Sessão Local</Text>
+            <Text style={styles.btnLightText}>Manter Texto Atual</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -64,7 +65,7 @@ export function SessionConflictModal({ conflict, isDark, onResolve }: Props) {
             onPress={() => onResolve('remote')}
           >
             <Text style={[styles.btnDarkText, { color: textPrimary }]}>
-              Usar Outra Sessão
+              Usar Versão da Outra Sessão
             </Text>
           </TouchableOpacity>
 
