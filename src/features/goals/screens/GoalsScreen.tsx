@@ -1,0 +1,7 @@
+import { useState } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { Button, Card, Checkbox, Text, TextInput } from 'react-native-paper';
+import { Screen } from '../../../../src/shared/components/Screen';
+type Goal={title:string;done:boolean};
+export default function GoalsScreen(){const [draft,setDraft]=useState('');const [goals,setGoals]=useState<Goal[]>([{title:'Escrever 500 palavras',done:true},{title:'Planejar o próximo capítulo',done:false}]);const add=()=>{if(draft.trim()){setGoals(v=>[...v,{title:draft.trim(),done:false}]);setDraft('')}};return <Screen><Text variant="headlineMedium">Minhas metas</Text><Text variant="bodyMedium">Defina objetivos e acompanhe seu progresso.</Text><TextInput label="Nova meta" value={draft} onChangeText={setDraft}/><Button mode="contained" onPress={add}>Adicionar meta</Button><Card><Card.Content><Text variant="titleMedium">{goals.filter(g=>g.done).length} de {goals.length} concluídas</Text></Card.Content></Card>{goals.map((g,i)=><Card key={`${g.title}-${i}`} style={styles.card}><Card.Content><View style={styles.row}><Checkbox status={g.done?'checked':'unchecked'} onPress={()=>setGoals(v=>v.map((x,n)=>n===i?{...x,done:!x.done}:x))}/><Text style={{flex:1,textDecorationLine:g.done?'line-through':'none'}}>{g.title}</Text><Button compact onPress={()=>setGoals(v=>v.filter((_,n)=>n!==i))}>Excluir</Button></View></Card.Content></Card>)}</Screen>}
+const styles=StyleSheet.create({card:{marginTop:10},row:{flexDirection:'row',alignItems:'center'}});
