@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
 import {
   WritingScreen,
   fetchStoriesFromApi,
@@ -15,6 +15,7 @@ interface SessionUser {
 }
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
+const LOGIN_ROUTE = '/login' as Href;
 
 export default function EscritaRoute() {
   const router = useRouter();
@@ -35,7 +36,7 @@ export default function EscritaRoute() {
         const token = await AsyncStorage.getItem('capitulando_access_token');
 
         if (!rawUser && !token) {
-          router.replace('/login');
+          router.replace(LOGIN_ROUTE);
           return;
         }
 
@@ -53,7 +54,7 @@ export default function EscritaRoute() {
         }
 
         if (!parsedUser) {
-          router.replace('/login');
+          router.replace(LOGIN_ROUTE);
           return;
         }
 
