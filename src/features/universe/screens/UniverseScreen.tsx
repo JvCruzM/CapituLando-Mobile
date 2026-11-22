@@ -37,11 +37,20 @@ import type {
   TimelineEventItem,
   UniverseTab,
 } from "../types";
+import { useCharactersWorkspace } from "../../characters/hooks/useCharacters";
+import { useTimelineWorkspace } from "../../timeline/hooks/useTimeline";
+import { CharacterRelationsModal } from "../../characters/components/CharacterRelationsModal";
 
 type Target =
   | { type: "encyclopedia"; data: EncyclopediaItem }
   | { type: "character"; data: CharacterItem }
   | { type: "timeline"; data: TimelineEventItem };
+
+type DeleteTarget =
+  | { kind: "encyclopedia"; item: EncyclopediaItem; label: string }
+  | { kind: "character"; id: string; label: string }
+  | { kind: "timeline"; id: string; label: string }
+  | null;
 
 export function UniverseScreen() {
   const ownerId = useAuthStore((state) => state.session?.user.id ?? "");
@@ -53,7 +62,11 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
   const [selectedStory, setSelectedStory] = useState("");
   const [detail, setDetail] = useState<Target | null>(null);
   const [form, setForm] = useState<FormMode>(null);
-  const [deleting, setDeleting] = useState<EncyclopediaItem | null>(null);
+  const [deleting, setDeleting] = useState<DeleteTarget>(null);
+  const [relationsCharacterId, setRelationsCharacterId] = useState<
+    string | null
+  >(null);
+
   const activeTab = useUniverseStore((state) => state.activeTab);
   const setActiveTab = useUniverseStore((state) => state.setActiveTab);
   const selectedCategory = useUniverseStore((state) => state.selectedCategory);
@@ -61,6 +74,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
   const setSearch = useUniverseStore((state) => state.setSearchQuery);
   const snapshotKey = useUniverseStore((state) => state.snapshotKey);
   const stats = useUniverseStats();
+
   const stories = useQuery({
     queryKey: storiesKey(ownerId),
     queryFn: ({ signal }) => loadUniverseStories(signal),
@@ -69,11 +83,16 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
   const storyId = stories.data?.some((story) => story.id === selectedStory)
     ? selectedStory
     : (stories.data?.[0]?.id ?? "");
+
   const snapshot = useQuery({
     queryKey: universeKey(ownerId, storyId),
     queryFn: ({ signal }) => loadUniverse(storyId, signal),
     enabled: Boolean(ownerId && storyId),
   });
+
+  const charactersWorkspace = useCharactersWorkspace(ownerId, storyId);
+  const timelineWorkspace = useTimelineWorkspace(ownerId, storyId);
+
   const currentKey = `${ownerId}:${storyId}`;
   useEffect(() => {
     if (snapshot.data && ownerId && storyId)
@@ -98,8 +117,17 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
     onSuccess: () =>
       client.invalidateQueries({ queryKey: universeKey(ownerId, storyId) }),
   });
+
   const remove = useMutation({
-    mutationFn: (item: EncyclopediaItem) => deleteEncyclopedia(storyId, item),
+    mutationFn: async (target: NonNullable<DeleteTarget>) => {
+      if (target.kind === "encyclopedia") {
+        await deleteEncyclopedia(storyId, target.item);
+      } else if (target.kind === "character") {
+        await charactersWorkspace.removeCharacter(target.id);
+      } else if (target.kind === "timeline") {
+        await timelineWorkspace.removeEvent(target.id);
+      }
+    },
     async onSuccess() {
       setDeleting(null);
       setDetail(null);
@@ -108,7 +136,12 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
       });
     },
   });
-  const busy = save.isPending || remove.isPending;
+
+  const busy =
+    save.isPending ||
+    remove.isPending ||
+    charactersWorkspace.isMutating ||
+    timelineWorkspace.isMutating;
 
   if (!stories.data)
     return (
@@ -143,6 +176,22 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
   const writableCategory =
     selectedCategory === "all" ||
     editableCategories.some((category) => category === selectedCategory);
+
+  const isLegacyTimelineEvent = (id: string) => id.startsWith("chronology:");
+
+  const canEditTarget = (target: Target | null) => {
+    if (!target) return false;
+    if (target.type === "encyclopedia") return canEditEntry(target.data);
+    if (target.type === "character") return true;
+    if (target.type === "timeline") return !isLegacyTimelineEvent(target.data.id);
+    return false;
+  };
+
+  const activeRelationsCharacter =
+    charactersWorkspace.characters.find(
+      (item) => item.id === relationsCharacterId,
+    ) ?? null;
+
   return (
     <Screen>
       <Text variant="headlineSmall" accessibilityRole="header">
@@ -168,6 +217,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
               setDetail(null);
               setForm(null);
               setDeleting(null);
+              setRelationsCharacterId(null);
               save.reset();
               remove.reset();
             }}
@@ -213,6 +263,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         value={search}
         onChangeText={setSearch}
       />
+
       {activeTab === "encyclopedia" && writableCategory ? (
         <Button
           mode="contained-tonal"
@@ -232,10 +283,41 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
           Nova Entrada
         </Button>
       ) : null}
-      <Text>
-        Raças, criaturas e itens podem ser editados aqui. As demais seções estão
-        disponíveis para consulta enquanto suas APIs de edição são integradas.
-      </Text>
+
+      {activeTab === "characters" ? (
+        <Button
+          mode="contained-tonal"
+          icon="account-plus"
+          accessibilityLabel="Novo Personagem"
+          disabled={busy}
+          onPress={() => {
+            setForm({
+              mode: "create",
+              targetType: "character",
+            });
+          }}
+        >
+          Novo Personagem
+        </Button>
+      ) : null}
+
+      {activeTab === "timeline" ? (
+        <Button
+          mode="contained-tonal"
+          icon="timeline-plus"
+          accessibilityLabel="Novo Evento ou Marco Cronológico"
+          disabled={busy}
+          onPress={() => {
+            setForm({
+              mode: "create",
+              targetType: "timeline",
+            });
+          }}
+        >
+          Novo Evento / Cronologia
+        </Button>
+      ) : null}
+
       {activeTab === "encyclopedia" ? (
         <EncyclopediaView
           onSelectItem={(data) => setDetail({ type: "encyclopedia", data })}
@@ -251,30 +333,87 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
           onSelectEvent={(data) => setDetail({ type: "timeline", data })}
         />
       ) : null}
+
       <ItemDetailModal
         target={detail}
         visible={Boolean(detail)}
         onDismiss={() => setDetail(null)}
-        editable={detail?.type === "encyclopedia" && canEditEntry(detail.data)}
+        editable={canEditTarget(detail)}
         onEdit={(target) => {
-          if (target?.type !== "encyclopedia" || !canEditEntry(target.data))
-            return;
+          if (!canEditTarget(target) || !target) return;
           save.reset();
           setDetail(null);
-          setForm({
-            mode: "edit",
-            targetType: "encyclopedia",
-            item: target.data,
-          });
+          if (target.type === "encyclopedia") {
+            setForm({
+              mode: "edit",
+              targetType: "encyclopedia",
+              item: target.data,
+            });
+          } else if (target.type === "character") {
+            setForm({
+              mode: "edit",
+              targetType: "character",
+              item: target.data,
+            });
+          } else if (target.type === "timeline") {
+            setForm({
+              mode: "edit",
+              targetType: "timeline",
+              item: target.data,
+            });
+          }
         }}
         onDelete={(target) => {
-          if (target?.type !== "encyclopedia" || !canEditEntry(target.data))
-            return;
+          if (!canEditTarget(target) || !target) return;
           remove.reset();
           setDetail(null);
-          setDeleting(target.data);
+          if (target.type === "encyclopedia") {
+            setDeleting({
+              kind: "encyclopedia",
+              item: target.data,
+              label: target.data.name,
+            });
+          } else if (target.type === "character") {
+            setDeleting({
+              kind: "character",
+              id: target.data.id,
+              label: target.data.name,
+            });
+          } else if (target.type === "timeline") {
+            setDeleting({
+              kind: "timeline",
+              id: target.data.id,
+              label: target.data.title,
+            });
+          }
         }}
       />
+
+      {detail?.type === "character" ? (
+        <Portal>
+          <View
+            style={{
+              position: "absolute",
+              bottom: 24,
+              alignSelf: "center",
+              zIndex: 9999,
+            }}
+          >
+            <Button
+              mode="contained"
+              icon="account-network"
+              onPress={() => {
+                const charId = detail.data.id;
+                setDetail(null);
+                setRelationsCharacterId(charId);
+              }}
+            >
+              Gerenciar Organizações e Relacionamentos
+            </Button>
+          </View>
+        </Portal>
+      ) : null}
+
       <CreateEditModal
         formMode={form}
         visible={Boolean(form)}
@@ -282,13 +421,100 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         onSaveEncyclopedia={async (item, id) => {
           await save.mutateAsync({ item, id });
         }}
-        onSaveCharacter={() => {
-          throw new Error("A edição de personagens ainda não está disponível.");
+        onSaveCharacter={async (item, id) => {
+          const matchedRace = charactersWorkspace.races.find(
+            (r) => r.name.toLowerCase() === item.race.trim().toLowerCase(),
+          );
+          const existingRecord = id
+            ? charactersWorkspace.characters.find((c) => c.id === id)
+            : undefined;
+
+          const saved = await charactersWorkspace.saveCharacter({
+            characterId: id,
+            payload: {
+              name: item.name,
+              raceId: matchedRace?.id ?? existingRecord?.raceId ?? null,
+              role: item.role,
+              appearance: item.appearance || null,
+              personality: item.personality || null,
+              motivation: item.motivation || null,
+              background: item.backstory || null,
+              motto: item.quote || null,
+              notes: [item.occupation, item.archetype, item.internalConflict]
+                .filter(Boolean)
+                .join(" | ") || null,
+            },
+          });
+
+          if (item.organization?.trim()) {
+            const matchedOrg = charactersWorkspace.organizations.find(
+              (o) =>
+                o.name.toLowerCase() === item.organization!.trim().toLowerCase(),
+            );
+            const alreadyLinked =
+              matchedOrg &&
+              charactersWorkspace.characterOrganizations.some(
+                (link) =>
+                  link.characterId === saved.id &&
+                  link.organizationId === matchedOrg.id,
+              );
+            if (matchedOrg && !alreadyLinked) {
+              await charactersWorkspace.addOrganizationLink({
+                characterId: saved.id,
+                organizationId: matchedOrg.id,
+                isActive: true,
+              });
+            }
+          }
         }}
-        onSaveTimeline={() => {
-          throw new Error("A edição da cronologia ainda não está disponível.");
+        onSaveTimeline={async (item, id) => {
+          const matchedLocation = item.location
+            ? timelineWorkspace.locations.find(
+                (loc) =>
+                  loc.name.toLowerCase() ===
+                  item.location!.trim().toLowerCase(),
+              )
+            : undefined;
+
+          const involvedNames = new Set(
+            item.charactersInvolved.map((name) => name.trim().toLowerCase()),
+          );
+          const matchedCharacterIds = charactersWorkspace.characters
+            .filter((char) => involvedNames.has(char.name.toLowerCase()))
+            .map((char) => char.id);
+
+          await timelineWorkspace.saveEvent({
+            eventId: id,
+            payload: {
+              title: item.title,
+              description: item.description || item.summary || null,
+              chronologicalDate:
+                [item.era, item.dateDisplay].filter(Boolean).join(" • ") ||
+                null,
+              sequenceOrder: item.dateOrder,
+              locationId: matchedLocation?.id ?? null,
+              chapterId: null,
+            },
+            characterIds: matchedCharacterIds,
+          });
         }}
       />
+
+      <CharacterRelationsModal
+        visible={Boolean(activeRelationsCharacter)}
+        character={activeRelationsCharacter}
+        allCharacters={charactersWorkspace.characters}
+        organizations={charactersWorkspace.organizations}
+        characterOrganizations={charactersWorkspace.characterOrganizations}
+        relationships={charactersWorkspace.relationships}
+        busy={charactersWorkspace.isMutating}
+        onDismiss={() => setRelationsCharacterId(null)}
+        onAddOrganization={charactersWorkspace.addOrganizationLink}
+        onRemoveOrganization={charactersWorkspace.removeOrganizationLink}
+        onSaveRelationship={charactersWorkspace.saveRelationship}
+        onRemoveRelationship={charactersWorkspace.removeRelationship}
+      />
+
       <Portal>
         <Dialog
           visible={Boolean(deleting)}
@@ -298,7 +524,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
           <Dialog.Title>Excluir registro?</Dialog.Title>
           <Dialog.Content>
             <Text>
-              Excluir {deleting?.name}? Esta ação será salva na sua conta e não
+              Excluir {deleting?.label}? Esta ação será salva na sua conta e não
               pode ser desfeita.
             </Text>
             {remove.error ? (
