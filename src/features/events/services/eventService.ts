@@ -5,17 +5,11 @@ export interface LocationOption {
   name: string;
 }
 
-export interface ChapterOption {
-  id: string;
-  title: string;
-  chapterOrder?: number | null;
-}
-
 export interface EventRecord {
   id: string;
-  story: { id: string };
-  chapter?: { id: string } | null;
-  location?: { id: string } | null;
+  storyId: string;
+  chapterId?: string | null;
+  locationId?: string | null;
   title: string;
   description?: string | null;
   chronologicalDate?: string | null;
@@ -26,52 +20,70 @@ export interface EventRecord {
 }
 
 export interface SaveEventPayload {
-  story: { id: string };
-  location: { id: string } | null;
-  chapter?: { id: string } | null;
   title: string;
   description?: string | null;
   chronologicalDate?: string | null;
   sequenceOrder?: number | null;
+  eventImage?: string | null;
+  chapterId?: string | null;
+  locationId?: string | null;
 }
 
 export async function listEvents(storyId: string): Promise<EventRecord[]> {
-  return accountRequest<EventRecord[]>("/world/events", {
-    query: { storyId },
+  return accountRequest<EventRecord[]>({
+    url: `/api/stories/${storyId}/events`,
+    method: "GET",
   });
 }
 
-export async function createEvent(payload: SaveEventPayload): Promise<EventRecord> {
-  return accountRequest<EventRecord>("/world/events", {
+export async function getEvent(
+  storyId: string,
+  eventId: string,
+): Promise<EventRecord> {
+  return accountRequest<EventRecord>({
+    url: `/api/stories/${storyId}/events/${eventId}`,
+    method: "GET",
+  });
+}
+
+export async function createEvent(
+  storyId: string,
+  payload: SaveEventPayload,
+): Promise<EventRecord> {
+  return accountRequest<EventRecord>({
+    url: `/api/stories/${storyId}/events`,
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export async function updateEvent(
+  storyId: string,
   eventId: string,
-  payload: SaveEventPayload
+  payload: SaveEventPayload,
 ): Promise<EventRecord> {
-  return accountRequest<EventRecord>(`/world/events/${eventId}`, {
+  return accountRequest<EventRecord>({
+    url: `/api/stories/${storyId}/events/${eventId}`,
     method: "PUT",
-    body: payload,
+    data: payload,
   });
 }
 
-export async function deleteEvent(eventId: string): Promise<void> {
-  await accountRequest<void>(`/world/events/${eventId}`, {
+export async function deleteEvent(
+  storyId: string,
+  eventId: string,
+): Promise<void> {
+  await accountRequest<void>({
+    url: `/api/stories/${storyId}/events/${eventId}`,
     method: "DELETE",
   });
 }
 
-export async function listStoryLocations(storyId: string): Promise<LocationOption[]> {
-  return accountRequest<LocationOption[]>("/world/locations", {
-    query: { storyId },
-  });
-}
-
-export async function listStoryChapters(storyId: string): Promise<ChapterOption[]> {
-  return accountRequest<ChapterOption[]>("/chapters", {
-    query: { storyId },
+export async function listStoryLocations(
+  storyId: string,
+): Promise<LocationOption[]> {
+  return accountRequest<LocationOption[]>({
+    url: `/api/stories/${storyId}/locations`,
+    method: "GET",
   });
 }
