@@ -49,14 +49,21 @@ export async function setItem(
       return;
     }
 
-    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
+    if (
+      Platform.OS === "web" &&
+      typeof window !== "undefined" &&
+      window.localStorage
+    ) {
       window.localStorage.setItem(key, value);
       return;
     }
 
     memoryFallback.set(key, value);
   } catch (error) {
-    console.error(`[SecureStore] Falha ao armazenar o item com a chave "${key}":`, error);
+    console.error(
+      `[SecureStore] Falha ao armazenar o item com a chave "${key}":`,
+      error,
+    );
     throw error;
   }
 }
@@ -74,13 +81,20 @@ export async function getItem(
       return await SecureStore.getItemAsync(key, options);
     }
 
-    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
+    if (
+      Platform.OS === "web" &&
+      typeof window !== "undefined" &&
+      window.localStorage
+    ) {
       return window.localStorage.getItem(key);
     }
 
     return memoryFallback.get(key) ?? null;
   } catch (error) {
-    console.error(`[SecureStore] Falha ao obter o item com a chave "${key}":`, error);
+    console.error(
+      `[SecureStore] Falha ao obter o item com a chave "${key}":`,
+      error,
+    );
     return null;
   }
 }
@@ -99,14 +113,21 @@ export async function deleteItem(
       return;
     }
 
-    if (Platform.OS === "web" && typeof window !== "undefined" && window.localStorage) {
+    if (
+      Platform.OS === "web" &&
+      typeof window !== "undefined" &&
+      window.localStorage
+    ) {
       window.localStorage.removeItem(key);
       return;
     }
 
     memoryFallback.delete(key);
   } catch (error) {
-    console.error(`[SecureStore] Falha ao excluir o item com a chave "${key}":`, error);
+    console.error(
+      `[SecureStore] Falha ao excluir o item com a chave "${key}":`,
+      error,
+    );
     throw error;
   }
 }
@@ -135,7 +156,10 @@ export async function getObject<T>(
   try {
     return JSON.parse(raw) as T;
   } catch (error) {
-    console.error(`[SecureStore] Erro ao deserializar JSON da chave "${key}":`, error);
+    console.error(
+      `[SecureStore] Erro ao deserializar JSON da chave "${key}":`,
+      error,
+    );
     return null;
   }
 }
@@ -146,31 +170,41 @@ export async function getObject<T>(
 
 /**
  * Salva a sessão do usuário de forma criptografada.
- * Também mantém o token de acesso salvo individualmente para conveniência.
+ * As operações de sessão são serializadas para evitar gravações após logout.
  */
-export async function saveAuthSession(session: Session): Promise<void> {
-  await setObject(SECURE_STORE_KEYS.AUTH_SESSION, session);
-  if (session.accessToken) {
-    await setItem(SECURE_STORE_KEYS.AUTH_TOKEN, session.accessToken);
-  }
-  if (session.user) {
-    await setObject(SECURE_STORE_KEYS.USER_PROFILE, session.user);
-  }
+let authQueue: Promise<unknown> = Promise.resolve();
+function enqueueAuth<T>(operation: () => Promise<T>): Promise<T> {
+  const result = authQueue.catch(() => undefined).then(operation);
+  authQueue = result;
+  return result;
+}
+
+export function saveAuthSession(
+  session: Session,
+  isCurrent = () => true,
+): Promise<void> {
+  return enqueueAuth(async () => {
+    if (!isCurrent()) return;
+    // One authoritative document prevents partially saved credentials.
+    await setObject(SECURE_STORE_KEYS.AUTH_SESSION, session);
+    await Promise.all([
+      deleteItem(SECURE_STORE_KEYS.AUTH_TOKEN),
+      deleteItem(SECURE_STORE_KEYS.USER_PROFILE),
+    ]);
+  });
 }
 
 /**
  * Recupera a sessão criptografada do usuário.
  */
-export async function getAuthSession(): Promise<Session | null> {
-  return await getObject<Session>(SECURE_STORE_KEYS.AUTH_SESSION);
+export function getAuthSession(): Promise<Session | null> {
+  return enqueueAuth(() => getObject<Session>(SECURE_STORE_KEYS.AUTH_SESSION));
 }
 
 /**
  * Recupera apenas o token de autenticação criptografado.
  */
 export async function getAuthToken(): Promise<string | null> {
-  const token = await getItem(SECURE_STORE_KEYS.AUTH_TOKEN);
-  if (token) return token;
   const session = await getAuthSession();
   return session?.accessToken ?? null;
 }
@@ -178,12 +212,14 @@ export async function getAuthToken(): Promise<string | null> {
 /**
  * Limpa todos os dados de sessão do SecureStore.
  */
-export async function clearAuthSession(): Promise<void> {
-  await Promise.all([
-    deleteItem(SECURE_STORE_KEYS.AUTH_SESSION),
-    deleteItem(SECURE_STORE_KEYS.AUTH_TOKEN),
-    deleteItem(SECURE_STORE_KEYS.USER_PROFILE),
-  ]);
+export function clearAuthSession(): Promise<void> {
+  return enqueueAuth(async () => {
+    await Promise.all([
+      deleteItem(SECURE_STORE_KEYS.AUTH_SESSION),
+      deleteItem(SECURE_STORE_KEYS.AUTH_TOKEN),
+      deleteItem(SECURE_STORE_KEYS.USER_PROFILE),
+    ]);
+  });
 }
 
 /**

@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useUniverseStore } from "../universe-store";
+import { useUniverseStore, useUniverseStats } from "../universe-store";
 import { CHARACTER_ROLES } from "../constants";
 import type { CharacterItem, CharacterRole } from "../types";
 
@@ -16,12 +16,11 @@ export function CharactersView({ onSelectCharacter }: CharactersViewProps) {
   const selectedRole = useUniverseStore((state) => state.selectedRole);
   const setSelectedRole = useUniverseStore((state) => state.setSelectedRole);
   const searchQuery = useUniverseStore((state) => state.searchQuery);
-  const stats = useUniverseStore((state) => state.getStats());
+  const stats = useUniverseStats();
 
   const filteredCharacters = useMemo(() => {
     return characters.filter((c) => {
-      const matchesRole =
-        selectedRole === "all" || c.role === selectedRole;
+      const matchesRole = selectedRole === "all" || c.role === selectedRole;
       if (!matchesRole) return false;
 
       if (!searchQuery.trim()) return true;
@@ -97,8 +96,8 @@ export function CharactersView({ onSelectCharacter }: CharactersViewProps) {
             Nenhum personagem encontrado
           </Text>
           <Text variant="bodySmall" style={styles.emptySubtitle}>
-            Tente redefinir os filtros ou criar um novo personagem para enriquecer
-            sua história.
+            Tente redefinir os filtros ou criar um novo personagem para
+            enriquecer sua história.
           </Text>
         </Surface>
       ) : (

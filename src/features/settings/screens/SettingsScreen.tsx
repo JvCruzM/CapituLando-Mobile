@@ -39,6 +39,7 @@ export function SettingsScreen() {
     return (
       <AccountQueryStatus
         error={query.error}
+        fetchStatus={query.fetchStatus}
         retry={() => void query.refetch()}
       />
     );

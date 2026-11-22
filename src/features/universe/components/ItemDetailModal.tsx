@@ -29,6 +29,7 @@ type DetailTarget =
   | null;
 
 interface ItemDetailModalProps {
+  editable?: boolean;
   target: DetailTarget;
   visible: boolean;
   onDismiss: () => void;
@@ -37,6 +38,7 @@ interface ItemDetailModalProps {
 }
 
 export function ItemDetailModal({
+  editable = false,
   target,
   visible,
   onDismiss,
@@ -69,19 +71,23 @@ export function ItemDetailModal({
         </Dialog.ScrollArea>
 
         <Dialog.Actions style={styles.actions}>
-          <Button
-            textColor={theme.colors.error}
-            onPress={() => onDelete(target)}
-          >
-            Excluir
-          </Button>
-          <Button
-            mode="outlined"
-            onPress={() => onEdit(target)}
-            style={{ marginLeft: 8 }}
-          >
-            Editar
-          </Button>
+          {editable ? (
+            <>
+              <Button
+                textColor={theme.colors.error}
+                onPress={() => onDelete(target)}
+              >
+                Excluir
+              </Button>
+              <Button
+                mode="outlined"
+                onPress={() => onEdit(target)}
+                style={{ marginLeft: 8 }}
+              >
+                Editar
+              </Button>
+            </>
+          ) : null}
           <Button
             mode="contained"
             onPress={onDismiss}
@@ -371,7 +377,12 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
           </Text>
           <View style={styles.chipsWrap}>
             {event.charactersInvolved.map((charName) => (
-              <Chip key={charName} icon="account" compact style={styles.tagChip}>
+              <Chip
+                key={charName}
+                icon="account"
+                compact
+                style={styles.tagChip}
+              >
                 {charName}
               </Chip>
             ))}

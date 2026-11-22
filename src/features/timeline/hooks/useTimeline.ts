@@ -1,0 +1,168 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  createEvent,
+  deleteEvent,
+  listEvents,
+  listStoryLocations,
+  type SaveEventPayload,
+  updateEvent,
+} from "../../events/services/eventService";
+import {
+  addEventCharacter,
+  listEventCharacters,
+  removeEventCharacter,
+} from "../../event-characters/services/eventCharacterService";
+import {
+  createFreeChronologyEntry,
+  deleteFreeChronologyEntry,
+  listFreeChronology,
+  type SaveFreeChronologyPayload,
+  updateFreeChronologyEntry,
+} from "../services/timelineNoteService";
+import { universeKey } from "../../universe/services/universe-api";
+
+export const eventsQueryKey = (storyId: string) =>
+  ["story-events", storyId] as const;
+
+export function useTimelineWorkspace(ownerId: string, storyId: string) {
+  const queryClient = useQueryClient();
+  const enabled = Boolean(ownerId && storyId);
+
+  const eventsQuery = useQuery({
+    queryKey: eventsQueryKey(storyId),
+    queryFn: () => listEvents(storyId),
+    enabled,
+  });
+
+  const locationsQuery = useQuery({
+    queryKey: ["story-locations", storyId],
+    queryFn: () => listStoryLocations(storyId),
+    enabled,
+  });
+
+  const eventCharactersQuery = useQuery({
+    queryKey: ["story-event-characters", storyId],
+    queryFn: () => listEventCharacters(storyId),
+    enabled,
+  });
+
+  const freeChronologyQuery = useQuery({
+    queryKey: ["story-free-chronology", storyId],
+    queryFn: () => listFreeChronology(storyId),
+    enabled,
+  });
+
+  const invalidateAll = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: eventsQueryKey(storyId) }),
+      queryClient.invalidateQueries({
+        queryKey: ["story-event-characters", storyId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["story-free-chronology", storyId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: universeKey(ownerId, storyId),
+      }),
+    ]);
+  };
+
+  const saveEventMutation = useMutation({
+    mutationFn: async ({
+      eventId,
+      payload,
+      characterIds,
+    }: {
+      eventId?: string;
+      payload: SaveEventPayload;
+      characterIds?: string[];
+    }) => {
+      const saved = eventId
+        ? await updateEvent(storyId, eventId, payload)
+        : await createEvent(storyId, payload);
+
+      if (characterIds) {
+        const existingLinks = (eventCharactersQuery.data ?? []).filter(
+          (link) => link.eventId === saved.id,
+        );
+        const currentCharIds = new Set(
+          existingLinks.map((link) => link.characterId),
+        );
+        const desiredCharIds = new Set(characterIds);
+
+        for (const link of existingLinks) {
+          if (!desiredCharIds.has(link.characterId)) {
+            await removeEventCharacter(storyId, link.id);
+          }
+        }
+
+        for (const characterId of desiredCharIds) {
+          if (!currentCharIds.has(characterId)) {
+            await addEventCharacter(storyId, {
+              eventId: saved.id,
+              characterId,
+            });
+          }
+        }
+      }
+
+      return saved;
+    },
+    onSuccess: invalidateAll,
+  });
+
+  const removeEventMutation = useMutation({
+    mutationFn: async (eventId: string) => {
+      const existingLinks = (eventCharactersQuery.data ?? []).filter(
+        (link) => link.eventId === eventId,
+      );
+      for (const link of existingLinks) {
+        await removeEventCharacter(storyId, link.id);
+      }
+      await deleteEvent(storyId, eventId);
+    },
+    onSuccess: invalidateAll,
+  });
+
+  const saveFreeNoteMutation = useMutation({
+    mutationFn: async ({
+      entryId,
+      payload,
+    }: {
+      entryId?: string;
+      payload: SaveFreeChronologyPayload;
+    }) => {
+      if (entryId) {
+        return updateFreeChronologyEntry(storyId, entryId, payload);
+      }
+      return createFreeChronologyEntry(storyId, payload);
+    },
+    onSuccess: invalidateAll,
+  });
+
+  const removeFreeNoteMutation = useMutation({
+    mutationFn: (entryId: string) =>
+      deleteFreeChronologyEntry(storyId, entryId),
+    onSuccess: invalidateAll,
+  });
+
+  return {
+    events: eventsQuery.data ?? [],
+    locations: locationsQuery.data ?? [],
+    eventCharacters: eventCharactersQuery.data ?? [],
+    freeChronology: freeChronologyQuery.data ?? [],
+    isLoading:
+      eventsQuery.isLoading ||
+      locationsQuery.isLoading ||
+      eventCharactersQuery.isLoading,
+    saveEvent: saveEventMutation.mutateAsync,
+    removeEvent: removeEventMutation.mutateAsync,
+    saveFreeNote: saveFreeNoteMutation.mutateAsync,
+    removeFreeNote: removeFreeNoteMutation.mutateAsync,
+    isMutating:
+      saveEventMutation.isPending ||
+      removeEventMutation.isPending ||
+      saveFreeNoteMutation.isPending ||
+      removeFreeNoteMutation.isPending,
+  };
+}

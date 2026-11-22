@@ -3,6 +3,8 @@ import { View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Chip, HelperText, Text, TextInput } from "react-native-paper";
 import { Screen } from "../../../shared/components/Screen";
+import { ProfileAvatar } from "../../../shared/components/ProfileAvatar";
+import { chooseProfilePhoto } from "../services/profile-photo";
 import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
 import { accountErrorMessage } from "../../../shared/api/account";
 import { useAuthStore } from "../../auth/session";
@@ -23,6 +25,7 @@ export function ProfileScreen() {
     return (
       <AccountQueryStatus
         error={query.error}
+        fetchStatus={query.fetchStatus}
         retry={() => void query.refetch()}
       />
     );
@@ -43,6 +46,8 @@ function ProfileForm({ profile }: { profile: Profile }) {
   );
   const [genre, setGenre] = useState("");
   const [validation, setValidation] = useState("");
+  const [choosingPhoto, setChoosingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState("");
   const save = useMutation({
     mutationFn: saveProfile,
     onSuccess(updated) {
@@ -62,9 +67,24 @@ function ProfileForm({ profile }: { profile: Profile }) {
       );
     },
   });
+  const busy = save.isPending || choosingPhoto;
+
+  async function choosePhoto() {
+    if (busy) return;
+    setPhotoError("");
+    setChoosingPhoto(true);
+    try {
+      const photo = await chooseProfilePhoto();
+      if (photo) setAvatarImage(photo);
+    } catch (cause) {
+      setPhotoError(accountErrorMessage(cause));
+    } finally {
+      setChoosingPhoto(false);
+    }
+  }
 
   function submit() {
-    if (save.isPending) return;
+    if (busy) return;
     setValidation("");
     if (!/^[A-Za-z0-9._-]{3,50}$/.test(username.trim())) {
       return setValidation(
@@ -101,6 +121,27 @@ function ProfileForm({ profile }: { profile: Profile }) {
         Meu perfil
       </Text>
       <Text>{profile.email}</Text>
+      <ProfileAvatar uri={avatarImage} name={displayName} size={96} />
+      <Button
+        disabled={busy}
+        loading={choosingPhoto}
+        onPress={() => void choosePhoto()}
+      >
+        Escolher foto
+      </Button>
+      {avatarImage ? (
+        <Button
+          disabled={busy}
+          onPress={() => {
+            setAvatarImage("");
+            setPhotoError("");
+          }}
+        >
+          Remover foto
+        </Button>
+      ) : null}
+      <Text>A foto será atualizada ao salvar o perfil.</Text>
+      {photoError ? <HelperText type="error">{photoError}</HelperText> : null}
       <TextInput
         mode="outlined"
         label="Nome de usuário"
@@ -109,7 +150,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
         onChangeText={setUsername}
         autoCapitalize="none"
         maxLength={50}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <TextInput
         mode="outlined"
@@ -118,7 +159,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
         value={displayName}
         onChangeText={setDisplayName}
         maxLength={100}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <TextInput
         mode="outlined"
@@ -127,7 +168,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
         value={penName}
         onChangeText={setPenName}
         maxLength={100000}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <TextInput
         mode="outlined"
@@ -137,17 +178,17 @@ function ProfileForm({ profile }: { profile: Profile }) {
         value={bio}
         onChangeText={setBio}
         maxLength={100000}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <TextInput
         mode="outlined"
         label="URL da foto"
         accessibilityLabel="URL da foto"
         autoCapitalize="none"
-        value={avatarImage}
+        value={avatarImage.startsWith("data:image/") ? "" : avatarImage}
         onChangeText={setAvatarImage}
         maxLength={2000000}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <TextInput
         mode="outlined"
@@ -156,7 +197,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
         value={quote}
         onChangeText={setQuote}
         maxLength={100000}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <TextInput
         mode="outlined"
@@ -167,14 +208,14 @@ function ProfileForm({ profile }: { profile: Profile }) {
         value={websiteUrl}
         onChangeText={setWebsiteUrl}
         maxLength={100000}
-        disabled={save.isPending}
+        disabled={busy}
       />
       <Text variant="titleMedium">Gêneros favoritos</Text>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {favoriteGenres.map((item, index) => (
           <Chip
             key={index}
-            disabled={save.isPending}
+            disabled={busy}
             accessibilityLabel={item}
             closeIconAccessibilityLabel={"Remover " + item}
             onClose={() =>
@@ -218,7 +259,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
       ) : null}
       <Button
         mode="contained"
-        disabled={save.isPending}
+        disabled={busy}
         loading={save.isPending}
         onPress={submit}
       >

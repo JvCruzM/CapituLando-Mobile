@@ -60,7 +60,7 @@ export function CredentialsScreen({ mode }: { mode: "login" | "register" }) {
       } else {
         const nextSession = await signIn(credentials, controller.signal);
         if (!controller.signal.aborted)
-          useAuthStore.getState().setSession(nextSession);
+          await useAuthStore.getState().setSession(nextSession);
       }
       if (!controller.signal.aborted) {
         setPassword("");

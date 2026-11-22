@@ -1,410 +1,548 @@
-import React, { useEffect, useState } from "react";
-import { StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ScrollView, View } from "react-native";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Chip,
   Dialog,
-  FAB,
-  IconButton,
-  Menu,
+  HelperText,
   Portal,
   Searchbar,
   SegmentedButtons,
-  Surface,
   Text,
-  useTheme,
 } from "react-native-paper";
-import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { Screen } from "../../../shared/components/Screen";
-import { useUniverseStore } from "../universe-store";
+import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
+import { accountErrorMessage } from "../../../shared/api/account";
+import { useAuthStore } from "../../auth/session";
+import { useUniverseStore, useUniverseStats } from "../universe-store";
 import { EncyclopediaView } from "../components/EncyclopediaView";
 import { CharactersView } from "../components/CharactersView";
 import { TimelineView } from "../components/TimelineView";
 import { ItemDetailModal } from "../components/ItemDetailModal";
 import { CreateEditModal, type FormMode } from "../components/CreateEditModal";
+import {
+  canEditEntry,
+  deleteEncyclopedia,
+  editableCategories,
+  loadUniverse,
+  loadUniverseStories,
+  saveEncyclopedia,
+  storiesKey,
+  universeKey,
+} from "../services/universe-api";
 import type {
-  EncyclopediaCategory,
   EncyclopediaItem,
   CharacterItem,
   TimelineEventItem,
   UniverseTab,
 } from "../types";
+import { useCharactersWorkspace } from "../../characters/hooks/useCharacters";
+import { useTimelineWorkspace } from "../../timeline/hooks/useTimeline";
+import { CharacterRelationsModal } from "../../characters/components/CharacterRelationsModal";
+
+type Target =
+  | { type: "encyclopedia"; data: EncyclopediaItem }
+  | { type: "character"; data: CharacterItem }
+  | { type: "timeline"; data: TimelineEventItem };
+
+type DeleteTarget =
+  | { kind: "encyclopedia"; item: EncyclopediaItem; label: string }
+  | { kind: "character"; id: string; label: string }
+  | { kind: "timeline"; id: string; label: string }
+  | null;
 
 export function UniverseScreen() {
-  const theme = useTheme();
+  const ownerId = useAuthStore((state) => state.session?.user.id ?? "");
+  return <UniverseContent key={ownerId} ownerId={ownerId} />;
+}
 
-  // Zustand Store
-  const loadData = useUniverseStore((state) => state.loadData);
+function UniverseContent({ ownerId }: { ownerId: string }) {
+  const client = useQueryClient();
+  const [selectedStory, setSelectedStory] = useState("");
+  const [detail, setDetail] = useState<Target | null>(null);
+  const [form, setForm] = useState<FormMode>(null);
+  const [deleting, setDeleting] = useState<DeleteTarget>(null);
+  const [relationsCharacterId, setRelationsCharacterId] = useState<
+    string | null
+  >(null);
+
   const activeTab = useUniverseStore((state) => state.activeTab);
   const setActiveTab = useUniverseStore((state) => state.setActiveTab);
   const selectedCategory = useUniverseStore((state) => state.selectedCategory);
-  const searchQuery = useUniverseStore((state) => state.searchQuery);
-  const setSearchQuery = useUniverseStore((state) => state.setSearchQuery);
-  const stats = useUniverseStore((state) => state.getStats());
+  const search = useUniverseStore((state) => state.searchQuery);
+  const setSearch = useUniverseStore((state) => state.setSearchQuery);
+  const snapshotKey = useUniverseStore((state) => state.snapshotKey);
+  const stats = useUniverseStats();
 
-  // CRUD actions
-  const addEncyclopediaItem = useUniverseStore(
-    (state) => state.addEncyclopediaItem,
-  );
-  const updateEncyclopediaItem = useUniverseStore(
-    (state) => state.updateEncyclopediaItem,
-  );
-  const deleteEncyclopediaItem = useUniverseStore(
-    (state) => state.deleteEncyclopediaItem,
-  );
+  const stories = useQuery({
+    queryKey: storiesKey(ownerId),
+    queryFn: ({ signal }) => loadUniverseStories(signal),
+    enabled: Boolean(ownerId),
+  });
+  const storyId = stories.data?.some((story) => story.id === selectedStory)
+    ? selectedStory
+    : (stories.data?.[0]?.id ?? "");
 
-  const addCharacter = useUniverseStore((state) => state.addCharacter);
-  const updateCharacter = useUniverseStore((state) => state.updateCharacter);
-  const deleteCharacter = useUniverseStore((state) => state.deleteCharacter);
+  const snapshot = useQuery({
+    queryKey: universeKey(ownerId, storyId),
+    queryFn: ({ signal }) => loadUniverse(storyId, signal),
+    enabled: Boolean(ownerId && storyId),
+  });
 
-  const addTimelineEvent = useUniverseStore((state) => state.addTimelineEvent);
-  const updateTimelineEvent = useUniverseStore(
-    (state) => state.updateTimelineEvent,
-  );
-  const deleteTimelineEvent = useUniverseStore(
-    (state) => state.deleteTimelineEvent,
-  );
-  const resetToDefaults = useUniverseStore((state) => state.resetToDefaults);
+  const charactersWorkspace = useCharactersWorkspace(ownerId, storyId);
+  const timelineWorkspace = useTimelineWorkspace(ownerId, storyId);
 
-  // Modals & Menu State
-  const [detailTarget, setDetailTarget] = useState<
-    | { type: "encyclopedia"; data: EncyclopediaItem }
-    | { type: "character"; data: CharacterItem }
-    | { type: "timeline"; data: TimelineEventItem }
-    | null
-  >(null);
-
-  const [formMode, setFormMode] = useState<FormMode>(null);
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [resetConfirmVisible, setResetConfirmVisible] = useState(false);
-  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<
-    | { type: "encyclopedia"; data: EncyclopediaItem }
-    | { type: "character"; data: CharacterItem }
-    | { type: "timeline"; data: TimelineEventItem }
-    | null
-  >(null);
-
+  const currentKey = `${ownerId}:${storyId}`;
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    if (snapshot.data && ownerId && storyId)
+      useUniverseStore.getState().setSnapshot(currentKey, snapshot.data);
+  }, [snapshot.data, currentKey, ownerId, storyId]);
 
-  // Handlers for Add Button
-  function handleOpenCreate() {
-    if (activeTab === "encyclopedia") {
-      const cat =
-        selectedCategory === "all"
-          ? ("races" as EncyclopediaCategory)
-          : selectedCategory;
-      setFormMode({
-        mode: "create",
-        targetType: "encyclopedia",
-        defaultCategory: cat,
-      });
-    } else if (activeTab === "characters") {
-      setFormMode({ mode: "create", targetType: "character" });
-    } else {
-      setFormMode({ mode: "create", targetType: "timeline" });
-    }
-  }
+  const save = useMutation({
+    mutationFn: async ({
+      item,
+      id,
+    }: {
+      item: Omit<EncyclopediaItem, "id" | "createdAt" | "updatedAt">;
+      id?: string;
+    }) => {
+      const original = id
+        ? snapshot.data?.encyclopediaItems.find((entry) => entry.id === id)
+        : undefined;
+      if (id && !original)
+        throw new Error("A entrada mudou. Atualize os dados antes de editar.");
+      await saveEncyclopedia(storyId, item, original);
+    },
+    onSuccess: () =>
+      client.invalidateQueries({ queryKey: universeKey(ownerId, storyId) }),
+  });
 
-  function handleEditFromDetail(
-    target:
-      | { type: "encyclopedia"; data: EncyclopediaItem }
-      | { type: "character"; data: CharacterItem }
-      | { type: "timeline"; data: TimelineEventItem }
-      | null,
-  ) {
-    setDetailTarget(null);
-    if (!target) return;
-    if (target.type === "encyclopedia") {
-      setFormMode({
-        mode: "edit",
-        targetType: "encyclopedia",
-        item: target.data,
+  const remove = useMutation({
+    mutationFn: async (target: NonNullable<DeleteTarget>) => {
+      if (target.kind === "encyclopedia") {
+        await deleteEncyclopedia(storyId, target.item);
+      } else if (target.kind === "character") {
+        await charactersWorkspace.removeCharacter(target.id);
+      } else if (target.kind === "timeline") {
+        await timelineWorkspace.removeEvent(target.id);
+      }
+    },
+    async onSuccess() {
+      setDeleting(null);
+      setDetail(null);
+      await client.invalidateQueries({
+        queryKey: universeKey(ownerId, storyId),
       });
-    } else if (target.type === "character") {
-      setFormMode({
-        mode: "edit",
-        targetType: "character",
-        item: target.data,
-      });
-    } else if (target.type === "timeline") {
-      setFormMode({
-        mode: "edit",
-        targetType: "timeline",
-        item: target.data,
-      });
-    }
-  }
+    },
+  });
 
-  function handleDeleteFromDetail(
-    target:
-      | { type: "encyclopedia"; data: EncyclopediaItem }
-      | { type: "character"; data: CharacterItem }
-      | { type: "timeline"; data: TimelineEventItem }
-      | null,
-  ) {
-    if (!target) return;
-    setDetailTarget(null);
-    setDeleteConfirmTarget(target);
-  }
+  const busy =
+    save.isPending ||
+    remove.isPending ||
+    charactersWorkspace.isMutating ||
+    timelineWorkspace.isMutating;
 
-  function handleConfirmDelete() {
-    if (!deleteConfirmTarget) return;
-    if (deleteConfirmTarget.type === "encyclopedia") {
-      deleteEncyclopediaItem(deleteConfirmTarget.data.id);
-    } else if (deleteConfirmTarget.type === "character") {
-      deleteCharacter(deleteConfirmTarget.data.id);
-    } else if (deleteConfirmTarget.type === "timeline") {
-      deleteTimelineEvent(deleteConfirmTarget.data.id);
-    }
-    setDeleteConfirmTarget(null);
-  }
+  if (!stories.data)
+    return (
+      <AccountQueryStatus
+        error={stories.error}
+        fetchStatus={stories.fetchStatus}
+        retry={() => void stories.refetch()}
+      />
+    );
+  if (!stories.data.length)
+    return (
+      <Screen>
+        <Text variant="headlineMedium">Enciclopédia</Text>
+        <Text>
+          Você ainda não tem histórias. Crie uma história no web para começar a
+          construir seu universo.
+        </Text>
+        <Button onPress={() => void stories.refetch()}>
+          Atualizar histórias
+        </Button>
+      </Screen>
+    );
+  if (!snapshot.data || snapshotKey !== currentKey)
+    return (
+      <AccountQueryStatus
+        error={snapshot.error}
+        fetchStatus={snapshot.fetchStatus}
+        retry={() => void snapshot.refetch()}
+      />
+    );
+
+  const writableCategory =
+    selectedCategory === "all" ||
+    editableCategories.some((category) => category === selectedCategory);
+
+  const isLegacyTimelineEvent = (id: string) => id.startsWith("chronology:");
+
+  const canEditTarget = (target: Target | null) => {
+    if (!target) return false;
+    if (target.type === "encyclopedia") return canEditEntry(target.data);
+    if (target.type === "character") return true;
+    if (target.type === "timeline") return !isLegacyTimelineEvent(target.data.id);
+    return false;
+  };
+
+  const activeRelationsCharacter =
+    charactersWorkspace.characters.find(
+      (item) => item.id === relationsCharacterId,
+    ) ?? null;
 
   return (
     <Screen>
-      {/* Top Banner & Header */}
-      <Surface
-        style={[
-          styles.headerBanner,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: theme.colors.outlineVariant ?? "#e0d8dd",
-          },
-        ]}
-        elevation={1}
+      <Text variant="headlineSmall" accessibilityRole="header">
+        Bíblia do Universo
+      </Text>
+      <Text>
+        Selecione a história. Os dados são compartilhados com sua conta no web.
+      </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8 }}
       >
-        <View style={styles.bannerRow}>
-          <View style={styles.bannerText}>
-            <Text variant="headlineSmall" style={styles.mainTitle}>
-              Bíblia do Universo
-            </Text>
-            <Text variant="bodySmall" style={styles.bannerSubtitle}>
-              Enciclopédia de Lore, Personagens e Linha do Tempo
-            </Text>
-          </View>
-          <Menu
-            visible={menuVisible}
-            onDismiss={() => setMenuVisible(false)}
-            anchor={
-              <IconButton
-                icon="dots-vertical"
-                onPress={() => setMenuVisible(true)}
-                accessibilityLabel="Opções do Universo"
-              />
-            }
+        {stories.data.map((story) => (
+          <Chip
+            key={story.id}
+            selected={story.id === storyId}
+            disabled={busy}
+            onPress={() => {
+              if (busy || story.id === storyId) return;
+              useUniverseStore.getState().reset();
+              setSelectedStory(story.id);
+              setDetail(null);
+              setForm(null);
+              setDeleting(null);
+              setRelationsCharacterId(null);
+              save.reset();
+              remove.reset();
+            }}
           >
-            <Menu.Item
-              onPress={() => {
-                setMenuVisible(false);
-                setResetConfirmVisible(true);
-              }}
-              title="Restaurar Lore Inicial"
-              leadingIcon="backup-restore"
-            />
-          </Menu>
-        </View>
-
-        {/* Live Counters */}
-        <View style={styles.statsRow}>
-          <Chip icon="book-open-variant" compact style={styles.statChip}>
-            {stats.totalEncyclopedia} Entradas
+            {story.title}
           </Chip>
-          <Chip icon="account-group" compact style={styles.statChip}>
-            {stats.totalCharacters} Personagens
-          </Chip>
-          <Chip icon="timeline-clock" compact style={styles.statChip}>
-            {stats.totalTimeline} Eventos
-          </Chip>
-        </View>
-      </Surface>
-
-      {/* Main Tab Segmented Buttons */}
+        ))}
+      </ScrollView>
+      <Button
+        disabled={busy || snapshot.isFetching}
+        loading={snapshot.isFetching}
+        onPress={() => {
+          void client.invalidateQueries({ queryKey: storiesKey(ownerId) });
+          void client.invalidateQueries({
+            queryKey: universeKey(ownerId, storyId),
+          });
+        }}
+      >
+        Atualizar dados
+      </Button>
+      {snapshot.error ? (
+        <HelperText type="error">
+          {accountErrorMessage(snapshot.error)}
+        </HelperText>
+      ) : null}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        <Chip>{stats.totalEncyclopedia} Entradas</Chip>
+        <Chip>{stats.totalCharacters} Personagens</Chip>
+        <Chip>{stats.totalTimeline} Eventos</Chip>
+      </View>
       <SegmentedButtons
         value={activeTab}
-        onValueChange={(val) => setActiveTab(val as UniverseTab)}
+        onValueChange={(value) => setActiveTab(value as UniverseTab)}
         buttons={[
-          {
-            value: "encyclopedia",
-            label: "Enciclopédia",
-            icon: "book-open-page-variant",
-          },
-          {
-            value: "characters",
-            label: "Personagens",
-            icon: "account-star",
-          },
-          {
-            value: "timeline",
-            label: "Cronologia",
-            icon: "timeline-clock",
-          },
+          { value: "encyclopedia", label: "Enciclopédia", disabled: busy },
+          { value: "characters", label: "Personagens", disabled: busy },
+          { value: "timeline", label: "Cronologia", disabled: busy },
         ]}
       />
-
-      {/* Universal Searchbar */}
       <Searchbar
-        placeholder={
-          activeTab === "encyclopedia"
-            ? "Buscar raças, criaturas, itens, regras..."
-            : activeTab === "characters"
-            ? "Buscar personagens por nome, arquétipo, papel..."
-            : "Buscar eventos, eras, personagens..."
-        }
-        onChangeText={setSearchQuery}
-        value={searchQuery}
-        style={[
-          styles.searchBar,
-          { backgroundColor: theme.colors.surface },
-        ]}
+        placeholder="Buscar no universo"
+        accessibilityLabel="Buscar no universo"
+        value={search}
+        onChangeText={setSearch}
       />
 
-      {/* Action Bar (Add & Context info) */}
-      <View style={styles.actionBar}>
-        <Text variant="labelLarge" style={styles.actionSectionTitle}>
-          {activeTab === "encyclopedia"
-            ? "Códice & Entradas do Mundo"
-            : activeTab === "characters"
-            ? "Galeria de Personagens"
-            : "Linha Cronológica de Eventos"}
-        </Text>
+      {activeTab === "encyclopedia" && writableCategory ? (
         <Button
           mode="contained-tonal"
           icon="plus"
-          compact
-          onPress={handleOpenCreate}
+          accessibilityLabel="Nova Entrada"
+          disabled={busy}
+          onPress={() => {
+            save.reset();
+            setForm({
+              mode: "create",
+              targetType: "encyclopedia",
+              defaultCategory:
+                selectedCategory === "all" ? "races" : selectedCategory,
+            });
+          }}
         >
-          {activeTab === "encyclopedia"
-            ? "Nova Entrada"
-            : activeTab === "characters"
-            ? "Novo Personagem"
-            : "Novo Evento"}
+          Nova Entrada
         </Button>
-      </View>
+      ) : null}
 
-      {/* Tab Content Views */}
-      {activeTab === "encyclopedia" && (
+      {activeTab === "characters" ? (
+        <Button
+          mode="contained-tonal"
+          icon="account-plus"
+          accessibilityLabel="Novo Personagem"
+          disabled={busy}
+          onPress={() => {
+            setForm({
+              mode: "create",
+              targetType: "character",
+            });
+          }}
+        >
+          Novo Personagem
+        </Button>
+      ) : null}
+
+      {activeTab === "timeline" ? (
+        <Button
+          mode="contained-tonal"
+          icon="timeline-plus"
+          accessibilityLabel="Novo Evento ou Marco Cronológico"
+          disabled={busy}
+          onPress={() => {
+            setForm({
+              mode: "create",
+              targetType: "timeline",
+            });
+          }}
+        >
+          Novo Evento / Cronologia
+        </Button>
+      ) : null}
+
+      {activeTab === "encyclopedia" ? (
         <EncyclopediaView
-          onSelectItem={(item) =>
-            setDetailTarget({ type: "encyclopedia", data: item })
-          }
+          onSelectItem={(data) => setDetail({ type: "encyclopedia", data })}
         />
-      )}
-
-      {activeTab === "characters" && (
+      ) : null}
+      {activeTab === "characters" ? (
         <CharactersView
-          onSelectCharacter={(char) =>
-            setDetailTarget({ type: "character", data: char })
-          }
+          onSelectCharacter={(data) => setDetail({ type: "character", data })}
         />
-      )}
-
-      {activeTab === "timeline" && (
+      ) : null}
+      {activeTab === "timeline" ? (
         <TimelineView
-          onSelectEvent={(ev) =>
-            setDetailTarget({ type: "timeline", data: ev })
-          }
+          onSelectEvent={(data) => setDetail({ type: "timeline", data })}
         />
-      )}
+      ) : null}
 
-      {/* Detail Inspection Modal */}
       <ItemDetailModal
-        target={detailTarget}
-        visible={Boolean(detailTarget)}
-        onDismiss={() => setDetailTarget(null)}
-        onEdit={handleEditFromDetail}
-        onDelete={handleDeleteFromDetail}
+        target={detail}
+        visible={Boolean(detail)}
+        onDismiss={() => setDetail(null)}
+        editable={canEditTarget(detail)}
+        onEdit={(target) => {
+          if (!canEditTarget(target) || !target) return;
+          save.reset();
+          setDetail(null);
+          if (target.type === "encyclopedia") {
+            setForm({
+              mode: "edit",
+              targetType: "encyclopedia",
+              item: target.data,
+            });
+          } else if (target.type === "character") {
+            setForm({
+              mode: "edit",
+              targetType: "character",
+              item: target.data,
+            });
+          } else if (target.type === "timeline") {
+            setForm({
+              mode: "edit",
+              targetType: "timeline",
+              item: target.data,
+            });
+          }
+        }}
+        onDelete={(target) => {
+          if (!canEditTarget(target) || !target) return;
+          remove.reset();
+          setDetail(null);
+          if (target.type === "encyclopedia") {
+            setDeleting({
+              kind: "encyclopedia",
+              item: target.data,
+              label: target.data.name,
+            });
+          } else if (target.type === "character") {
+            setDeleting({
+              kind: "character",
+              id: target.data.id,
+              label: target.data.name,
+            });
+          } else if (target.type === "timeline") {
+            setDeleting({
+              kind: "timeline",
+              id: target.data.id,
+              label: target.data.title,
+            });
+          }
+        }}
       />
 
-      {/* Create / Edit Form Modal */}
-      <CreateEditModal
-        formMode={formMode}
-        visible={Boolean(formMode)}
-        onDismiss={() => setFormMode(null)}
-        onSaveEncyclopedia={(itemData, id) => {
-          if (id) {
-            updateEncyclopediaItem(id, itemData);
-          } else {
-            addEncyclopediaItem(itemData);
-          }
-        }}
-        onSaveCharacter={(charData, id) => {
-          if (id) {
-            updateCharacter(id, charData);
-          } else {
-            addCharacter(charData);
-          }
-        }}
-        onSaveTimeline={(timeData, id) => {
-          if (id) {
-            updateTimelineEvent(id, timeData);
-          } else {
-            addTimelineEvent(timeData);
-          }
-        }}
-      />
-
-      {/* Delete Confirmation Dialog */}
-      <Portal>
-        <Dialog
-          visible={Boolean(deleteConfirmTarget)}
-          onDismiss={() => setDeleteConfirmTarget(null)}
-        >
-          <Dialog.Title>Excluir Registro?</Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyMedium">
-              Tem certeza que deseja excluir{" "}
-              <Text style={{ fontWeight: "bold" }}>
-                {deleteConfirmTarget?.type === "encyclopedia"
-                  ? deleteConfirmTarget.data.name
-                  : deleteConfirmTarget?.type === "character"
-                  ? deleteConfirmTarget.data.name
-                  : deleteConfirmTarget?.type === "timeline"
-                  ? deleteConfirmTarget.data.title
-                  : ""}
-              </Text>
-              ? Esta ação não pode ser desfeita.
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setDeleteConfirmTarget(null)}>
-              Cancelar
-            </Button>
+      {detail?.type === "character" ? (
+        <Portal>
+          <View
+            style={{
+              position: "absolute",
+              bottom: 24,
+              alignSelf: "center",
+              zIndex: 9999,
+            }}
+          >
             <Button
-              textColor={theme.colors.error}
-              onPress={handleConfirmDelete}
-            >
-              Confirmar Exclusão
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
-
-      {/* Reset Defaults Confirmation Dialog */}
-      <Portal>
-        <Dialog
-          visible={resetConfirmVisible}
-          onDismiss={() => setResetConfirmVisible(false)}
-        >
-          <Dialog.Title>Restaurar Lore Inicial?</Dialog.Title>
-          <Dialog.Content>
-            <Text variant="bodyMedium">
-              Isso restaurará todos os dados de exemplo do universo (raças,
-              criaturas, itens, locais, organizações, regras, tema, personagens
-              e cronologia). Suas edições personalizadas serão substituídas.
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setResetConfirmVisible(false)}>
-              Cancelar
-            </Button>
-            <Button
-              onPress={async () => {
-                await resetToDefaults();
-                setResetConfirmVisible(false);
+              mode="contained"
+              icon="account-network"
+              onPress={() => {
+                const charId = detail.data.id;
+                setDetail(null);
+                setRelationsCharacterId(charId);
               }}
             >
-              Restaurar
+              Gerenciar Organizações e Relacionamentos
+            </Button>
+          </View>
+        </Portal>
+      ) : null}
+
+      <CreateEditModal
+        formMode={form}
+        visible={Boolean(form)}
+        onDismiss={() => setForm(null)}
+        onSaveEncyclopedia={async (item, id) => {
+          await save.mutateAsync({ item, id });
+        }}
+        onSaveCharacter={async (item, id) => {
+          const matchedRace = charactersWorkspace.races.find(
+            (r) => r.name.toLowerCase() === item.race.trim().toLowerCase(),
+          );
+          const existingRecord = id
+            ? charactersWorkspace.characters.find((c) => c.id === id)
+            : undefined;
+
+          const saved = await charactersWorkspace.saveCharacter({
+            characterId: id,
+            payload: {
+              name: item.name,
+              raceId: matchedRace?.id ?? existingRecord?.raceId ?? null,
+              role: item.role,
+              appearance: item.appearance || null,
+              personality: item.personality || null,
+              motivation: item.motivation || null,
+              background: item.backstory || null,
+              motto: item.quote || null,
+              notes: [item.occupation, item.archetype, item.internalConflict]
+                .filter(Boolean)
+                .join(" | ") || null,
+            },
+          });
+
+          if (item.organization?.trim()) {
+            const matchedOrg = charactersWorkspace.organizations.find(
+              (o) =>
+                o.name.toLowerCase() === item.organization!.trim().toLowerCase(),
+            );
+            const alreadyLinked =
+              matchedOrg &&
+              charactersWorkspace.characterOrganizations.some(
+                (link) =>
+                  link.characterId === saved.id &&
+                  link.organizationId === matchedOrg.id,
+              );
+            if (matchedOrg && !alreadyLinked) {
+              await charactersWorkspace.addOrganizationLink({
+                characterId: saved.id,
+                organizationId: matchedOrg.id,
+                isActive: true,
+              });
+            }
+          }
+        }}
+        onSaveTimeline={async (item, id) => {
+          const matchedLocation = item.location
+            ? timelineWorkspace.locations.find(
+                (loc) =>
+                  loc.name.toLowerCase() ===
+                  item.location!.trim().toLowerCase(),
+              )
+            : undefined;
+
+          const involvedNames = new Set(
+            item.charactersInvolved.map((name) => name.trim().toLowerCase()),
+          );
+          const matchedCharacterIds = charactersWorkspace.characters
+            .filter((char) => involvedNames.has(char.name.toLowerCase()))
+            .map((char) => char.id);
+
+          await timelineWorkspace.saveEvent({
+            eventId: id,
+            payload: {
+              title: item.title,
+              description: item.description || item.summary || null,
+              chronologicalDate:
+                [item.era, item.dateDisplay].filter(Boolean).join(" • ") ||
+                null,
+              sequenceOrder: item.dateOrder,
+              locationId: matchedLocation?.id ?? null,
+              chapterId: null,
+            },
+            characterIds: matchedCharacterIds,
+          });
+        }}
+      />
+
+      <CharacterRelationsModal
+        visible={Boolean(activeRelationsCharacter)}
+        character={activeRelationsCharacter}
+        allCharacters={charactersWorkspace.characters}
+        organizations={charactersWorkspace.organizations}
+        characterOrganizations={charactersWorkspace.characterOrganizations}
+        relationships={charactersWorkspace.relationships}
+        busy={charactersWorkspace.isMutating}
+        onDismiss={() => setRelationsCharacterId(null)}
+        onAddOrganization={charactersWorkspace.addOrganizationLink}
+        onRemoveOrganization={charactersWorkspace.removeOrganizationLink}
+        onSaveRelationship={charactersWorkspace.saveRelationship}
+        onRemoveRelationship={charactersWorkspace.removeRelationship}
+      />
+
+      <Portal>
+        <Dialog
+          visible={Boolean(deleting)}
+          dismissable={!busy}
+          onDismiss={() => setDeleting(null)}
+        >
+          <Dialog.Title>Excluir registro?</Dialog.Title>
+          <Dialog.Content>
+            <Text>
+              Excluir {deleting?.label}? Esta ação será salva na sua conta e não
+              pode ser desfeita.
+            </Text>
+            {remove.error ? (
+              <HelperText type="error">
+                {accountErrorMessage(remove.error)}
+              </HelperText>
+            ) : null}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button disabled={busy} onPress={() => setDeleting(null)}>
+              Cancelar
+            </Button>
+            <Button
+              loading={remove.isPending}
+              disabled={busy}
+              onPress={() => deleting && remove.mutate(deleting)}
+            >
+              Confirmar Exclusão
             </Button>
           </Dialog.Actions>
         </Dialog>
@@ -412,49 +550,3 @@ export function UniverseScreen() {
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  headerBanner: {
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 12,
-  },
-  bannerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  bannerText: {
-    flex: 1,
-  },
-  mainTitle: {
-    fontWeight: "bold",
-    color: "#704563",
-  },
-  bannerSubtitle: {
-    opacity: 0.75,
-    marginTop: 2,
-  },
-  statsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  statChip: {
-    height: 28,
-  },
-  searchBar: {
-    borderRadius: 12,
-    elevation: 1,
-  },
-  actionBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 4,
-  },
-  actionSectionTitle: {
-    fontWeight: "700",
-  },
-});

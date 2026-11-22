@@ -1,262 +1,71 @@
+import { useMemo } from "react";
 import { create } from "zustand";
-import { secureStore } from "../../shared/storage/secure-store";
+import { useAuthStore } from "../auth/session";
 import type {
   EncyclopediaCategory,
-  EncyclopediaItem,
-  CharacterItem,
   CharacterRole,
-  TimelineEventItem,
   UniverseTab,
   UniverseStats,
 } from "./types";
-import {
-  INITIAL_CHARACTERS,
-  INITIAL_ENCYCLOPEDIA_ITEMS,
-  INITIAL_TIMELINE_EVENTS,
-} from "./universe-seed";
+import type { UniverseData } from "./services/universe-api";
 
-const STORAGE_KEY = "capitulando.universe.data";
-
-interface PersistedUniverseData {
-  encyclopediaItems: EncyclopediaItem[];
-  characters: CharacterItem[];
-  timelineEvents: TimelineEventItem[];
-}
-
-interface UniverseState {
-  // State
-  encyclopediaItems: EncyclopediaItem[];
-  characters: CharacterItem[];
-  timelineEvents: TimelineEventItem[];
+const emptyData = (): UniverseData => ({
+  encyclopediaItems: [],
+  characters: [],
+  timelineEvents: [],
+});
+interface UniverseState extends UniverseData {
+  snapshotKey: string;
   activeTab: UniverseTab;
   selectedCategory: EncyclopediaCategory | "all";
   selectedRole: CharacterRole | "all";
-  selectedEra: string | "all";
+  selectedEra: string;
   searchQuery: string;
-  isLoaded: boolean;
-
-  // Navigation & Filtering actions
-  setActiveTab: (tab: UniverseTab) => void;
-  setSelectedCategory: (cat: EncyclopediaCategory | "all") => void;
-  setSelectedRole: (role: CharacterRole | "all") => void;
-  setSelectedEra: (era: string | "all") => void;
-  setSearchQuery: (query: string) => void;
-
-  // CRUD Encyclopedia
-  addEncyclopediaItem: (item: Omit<EncyclopediaItem, "id" | "createdAt" | "updatedAt">) => void;
-  updateEncyclopediaItem: (id: string, updates: Partial<Omit<EncyclopediaItem, "id">>) => void;
-  deleteEncyclopediaItem: (id: string) => void;
-
-  // CRUD Characters
-  addCharacter: (char: Omit<CharacterItem, "id" | "createdAt" | "updatedAt">) => void;
-  updateCharacter: (id: string, updates: Partial<Omit<CharacterItem, "id">>) => void;
-  deleteCharacter: (id: string) => void;
-
-  // CRUD Timeline
-  addTimelineEvent: (event: Omit<TimelineEventItem, "id" | "createdAt" | "updatedAt">) => void;
-  updateTimelineEvent: (id: string, updates: Partial<Omit<TimelineEventItem, "id">>) => void;
-  deleteTimelineEvent: (id: string) => void;
-
-  // Lifecycle & Persistence
-  loadData: () => Promise<void>;
-  resetToDefaults: () => Promise<void>;
-
-  // Computed helper
-  getStats: () => UniverseStats;
+  setActiveTab: (value: UniverseTab) => void;
+  setSelectedCategory: (value: EncyclopediaCategory | "all") => void;
+  setSelectedRole: (value: CharacterRole | "all") => void;
+  setSelectedEra: (value: string) => void;
+  setSearchQuery: (value: string) => void;
+  setSnapshot: (key: string, data: UniverseData) => void;
+  reset: () => void;
 }
-
-export const useUniverseStore = create<UniverseState>((set, get) => ({
-  encyclopediaItems: INITIAL_ENCYCLOPEDIA_ITEMS,
-  characters: INITIAL_CHARACTERS,
-  timelineEvents: INITIAL_TIMELINE_EVENTS,
+export const useUniverseStore = create<UniverseState>((set) => ({
+  ...emptyData(),
+  snapshotKey: "",
   activeTab: "encyclopedia",
   selectedCategory: "all",
   selectedRole: "all",
   selectedEra: "all",
   searchQuery: "",
-  isLoaded: false,
-
   setActiveTab: (activeTab) => set({ activeTab }),
   setSelectedCategory: (selectedCategory) => set({ selectedCategory }),
   setSelectedRole: (selectedRole) => set({ selectedRole }),
   setSelectedEra: (selectedEra) => set({ selectedEra }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
-
-  loadData: async () => {
-    try {
-      const persisted = await secureStore.getSystemData<PersistedUniverseData>(STORAGE_KEY);
-      if (
-        persisted &&
-        Array.isArray(persisted.encyclopediaItems) &&
-        Array.isArray(persisted.characters) &&
-        Array.isArray(persisted.timelineEvents)
-      ) {
-        set({
-          encyclopediaItems: persisted.encyclopediaItems,
-          characters: persisted.characters,
-          timelineEvents: persisted.timelineEvents,
-          isLoaded: true,
-        });
-        return;
-      }
-    } catch {
-      // fallback to initial
-    }
+  setSnapshot: (snapshotKey, data) => set({ ...data, snapshotKey }),
+  reset: () =>
     set({
-      encyclopediaItems: INITIAL_ENCYCLOPEDIA_ITEMS,
-      characters: INITIAL_CHARACTERS,
-      timelineEvents: INITIAL_TIMELINE_EVENTS,
-      isLoaded: true,
-    });
-  },
-
-  resetToDefaults: async () => {
-    set({
-      encyclopediaItems: INITIAL_ENCYCLOPEDIA_ITEMS,
-      characters: INITIAL_CHARACTERS,
-      timelineEvents: INITIAL_TIMELINE_EVENTS,
+      ...emptyData(),
+      snapshotKey: "",
+      activeTab: "encyclopedia",
       selectedCategory: "all",
       selectedRole: "all",
       selectedEra: "all",
       searchQuery: "",
-    });
-    await secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: INITIAL_ENCYCLOPEDIA_ITEMS,
-      characters: INITIAL_CHARACTERS,
-      timelineEvents: INITIAL_TIMELINE_EVENTS,
-    });
-  },
+    }),
+}));
 
-  addEncyclopediaItem: (itemData) => {
-    const now = new Date().toISOString();
-    const newItem: EncyclopediaItem = {
-      ...itemData,
-      id: "enc-" + Date.now(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    const nextList = [newItem, ...get().encyclopediaItems];
-    set({ encyclopediaItems: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: nextList,
-      characters: get().characters,
-      timelineEvents: get().timelineEvents,
-    });
-  },
+useAuthStore.subscribe((state, previous) => {
+  if (state.session?.user.id !== previous.session?.user.id)
+    useUniverseStore.getState().reset();
+});
 
-  updateEncyclopediaItem: (id, updates) => {
-    const nextList = get().encyclopediaItems.map((item) =>
-      item.id === id
-        ? { ...item, ...updates, updatedAt: new Date().toISOString() }
-        : item,
-    );
-    set({ encyclopediaItems: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: nextList,
-      characters: get().characters,
-      timelineEvents: get().timelineEvents,
-    });
-  },
-
-  deleteEncyclopediaItem: (id) => {
-    const nextList = get().encyclopediaItems.filter((item) => item.id !== id);
-    set({ encyclopediaItems: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: nextList,
-      characters: get().characters,
-      timelineEvents: get().timelineEvents,
-    });
-  },
-
-  addCharacter: (charData) => {
-    const now = new Date().toISOString();
-    const newChar: CharacterItem = {
-      ...charData,
-      id: "char-" + Date.now(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    const nextList = [newChar, ...get().characters];
-    set({ characters: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: get().encyclopediaItems,
-      characters: nextList,
-      timelineEvents: get().timelineEvents,
-    });
-  },
-
-  updateCharacter: (id, updates) => {
-    const nextList = get().characters.map((item) =>
-      item.id === id
-        ? { ...item, ...updates, updatedAt: new Date().toISOString() }
-        : item,
-    );
-    set({ characters: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: get().encyclopediaItems,
-      characters: nextList,
-      timelineEvents: get().timelineEvents,
-    });
-  },
-
-  deleteCharacter: (id) => {
-    const nextList = get().characters.filter((item) => item.id !== id);
-    set({ characters: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: get().encyclopediaItems,
-      characters: nextList,
-      timelineEvents: get().timelineEvents,
-    });
-  },
-
-  addTimelineEvent: (eventData) => {
-    const now = new Date().toISOString();
-    const newEvent: TimelineEventItem = {
-      ...eventData,
-      id: "event-" + Date.now(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    const nextList = [...get().timelineEvents, newEvent].sort(
-      (a, b) => a.dateOrder - b.dateOrder,
-    );
-    set({ timelineEvents: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: get().encyclopediaItems,
-      characters: get().characters,
-      timelineEvents: nextList,
-    });
-  },
-
-  updateTimelineEvent: (id, updates) => {
-    const nextList = get()
-      .timelineEvents.map((item) =>
-        item.id === id
-          ? { ...item, ...updates, updatedAt: new Date().toISOString() }
-          : item,
-      )
-      .sort((a, b) => a.dateOrder - b.dateOrder);
-    set({ timelineEvents: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: get().encyclopediaItems,
-      characters: get().characters,
-      timelineEvents: nextList,
-    });
-  },
-
-  deleteTimelineEvent: (id) => {
-    const nextList = get().timelineEvents.filter((item) => item.id !== id);
-    set({ timelineEvents: nextList });
-    void secureStore.saveSystemData<PersistedUniverseData>(STORAGE_KEY, {
-      encyclopediaItems: get().encyclopediaItems,
-      characters: get().characters,
-      timelineEvents: nextList,
-    });
-  },
-
-  getStats: () => {
-    const { encyclopediaItems, characters, timelineEvents } = get();
-    const byCategory: Record<EncyclopediaCategory, number> = {
+export function useUniverseStats(): UniverseStats {
+  const items = useUniverseStore((state) => state.encyclopediaItems);
+  const characters = useUniverseStore((state) => state.characters);
+  const events = useUniverseStore((state) => state.timelineEvents);
+  return useMemo(() => {
+    const byCategory: UniverseStats["byCategory"] = {
       races: 0,
       creatures: 0,
       items: 0,
@@ -265,16 +74,13 @@ export const useUniverseStore = create<UniverseState>((set, get) => ({
       "world-rules": 0,
       theme: 0,
     };
-    for (const item of encyclopediaItems) {
-      if (byCategory[item.category] !== undefined) {
-        byCategory[item.category]++;
-      }
-    }
+    for (const item of items) byCategory[item.category]++;
     return {
-      totalEncyclopedia: encyclopediaItems.length,
+      totalEncyclopedia: items.length,
       totalCharacters: characters.length,
-      totalTimeline: timelineEvents.length,
+      totalTimeline: events.length,
       byCategory,
     };
-  },
-}));
+  }, [items, characters, events]);
+}
+
