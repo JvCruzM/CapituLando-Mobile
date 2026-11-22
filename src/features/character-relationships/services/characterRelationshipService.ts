@@ -21,48 +21,43 @@ export interface SaveCharacterRelationshipPayload {
 }
 
 export async function listCharacterRelationships(
-  storyId: string
+  storyId: string,
 ): Promise<CharacterRelationshipRecord[]> {
-  return accountRequest<CharacterRelationshipRecord[]>(
-    `/stories/${storyId}/character-relationships`
-  );
+  return accountRequest<CharacterRelationshipRecord[]>({
+    url: `/api/stories/${storyId}/character-relationships`,
+    method: "GET",
+  });
 }
 
 export async function createCharacterRelationship(
   storyId: string,
-  payload: SaveCharacterRelationshipPayload
+  payload: SaveCharacterRelationshipPayload,
 ): Promise<CharacterRelationshipRecord> {
-  return accountRequest<CharacterRelationshipRecord>(
-    `/stories/${storyId}/character-relationships`,
-    {
-      method: "POST",
-      body: payload,
-    }
-  );
+  return accountRequest<CharacterRelationshipRecord>({
+    url: `/api/stories/${storyId}/character-relationships`,
+    method: "POST",
+    data: payload,
+  });
 }
 
 export async function updateCharacterRelationship(
   storyId: string,
   relationshipId: string,
-  payload: SaveCharacterRelationshipPayload
+  payload: SaveCharacterRelationshipPayload,
 ): Promise<CharacterRelationshipRecord> {
-  return accountRequest<CharacterRelationshipRecord>(
-    `/stories/${storyId}/character-relationships/${relationshipId}`,
-    {
-      method: "PUT",
-      body: payload,
-    }
-  );
+  return accountRequest<CharacterRelationshipRecord>({
+    url: `/api/stories/${storyId}/character-relationships/${relationshipId}`,
+    method: "PUT",
+    data: payload,
+  });
 }
 
 export async function deleteCharacterRelationship(
   storyId: string,
-  relationshipId: string
+  relationshipId: string,
 ): Promise<void> {
-  await accountRequest<void>(
-    `/stories/${storyId}/character-relationships/${relationshipId}`,
-    {
-      method: "DELETE",
-    }
-  );
+  await accountRequest<void>({
+    url: `/api/stories/${storyId}/character-relationships/${relationshipId}`,
+    method: "DELETE",
+  });
 }
