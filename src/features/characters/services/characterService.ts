@@ -7,8 +7,8 @@ export interface CharacterRaceOption {
 
 export interface CharacterRecord {
   id: string;
-  story?: { id: string } | null;
-  race?: { id: string } | null;
+  storyId: string;
+  raceId?: string | null;
   name: string;
   description?: string | null;
   appearance?: string | null;
@@ -37,10 +37,8 @@ export interface CharacterRecord {
 }
 
 export interface SaveCharacterPayload {
-  story: { id: string };
-  race: { id: string } | null;
-  raceProvided?: boolean;
   name: string;
+  raceId?: string | null;
   role?: string | null;
   age?: number | null;
   gender?: string | null;
@@ -60,42 +58,66 @@ export interface SaveCharacterPayload {
   drinks?: string | null;
   motto?: string | null;
   notes?: string | null;
+  characterImage?: string | null;
+  imageFit?: string | null;
+  imagePosition?: string | null;
 }
 
 export async function listCharacters(storyId: string): Promise<CharacterRecord[]> {
-  return accountRequest<CharacterRecord[]>("/characters", {
-    query: { storyId },
+  return accountRequest<CharacterRecord[]>({
+    url: `/api/stories/${storyId}/characters`,
+    method: "GET",
   });
 }
 
-export async function createCharacter(payload: SaveCharacterPayload): Promise<CharacterRecord> {
-  return accountRequest<CharacterRecord>("/characters", {
+export async function getCharacter(
+  storyId: string,
+  characterId: string,
+): Promise<CharacterRecord> {
+  return accountRequest<CharacterRecord>({
+    url: `/api/stories/${storyId}/characters/${characterId}`,
+    method: "GET",
+  });
+}
+
+export async function createCharacter(
+  storyId: string,
+  payload: SaveCharacterPayload,
+): Promise<CharacterRecord> {
+  return accountRequest<CharacterRecord>({
+    url: `/api/stories/${storyId}/characters`,
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export async function updateCharacter(
+  storyId: string,
   characterId: string,
-  payload: SaveCharacterPayload
+  payload: SaveCharacterPayload,
 ): Promise<CharacterRecord> {
-  return accountRequest<CharacterRecord>(`/characters/${characterId}`, {
+  return accountRequest<CharacterRecord>({
+    url: `/api/stories/${storyId}/characters/${characterId}`,
     method: "PUT",
-    body: {
-      ...payload,
-      raceProvided: true,
-    },
+    data: payload,
   });
 }
 
-export async function deleteCharacter(characterId: string): Promise<void> {
-  await accountRequest<void>(`/characters/${characterId}`, {
+export async function deleteCharacter(
+  storyId: string,
+  characterId: string,
+): Promise<void> {
+  await accountRequest<void>({
+    url: `/api/stories/${storyId}/characters/${characterId}`,
     method: "DELETE",
   });
 }
 
-export async function listStoryRaces(storyId: string): Promise<CharacterRaceOption[]> {
-  return accountRequest<CharacterRaceOption[]>("/races", {
-    query: { storyId },
+export async function listStoryRaces(
+  storyId: string,
+): Promise<CharacterRaceOption[]> {
+  return accountRequest<CharacterRaceOption[]>({
+    url: `/api/stories/${storyId}/races`,
+    method: "GET",
   });
 }
