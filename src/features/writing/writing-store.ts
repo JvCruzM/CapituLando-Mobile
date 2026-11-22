@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import type {
   WritingEntry,
   WritingItemKind,
@@ -7,20 +8,25 @@ import type {
   WritingStorySummary,
 } from './types';
 
-const ENTRIES_CACHE_PREFIX = '@capitulando:entries_cache_v2';
-const RECOVERY_CACHE_PREFIX = '@capitulando:recovery_v2';
+const ENTRIES_CACHE_PREFIX = '@capitulando:entries_cache_v3';
+const RECOVERY_CACHE_PREFIX = '@capitulando:recovery_v3';
 
-// Fila serial por chave para evitar condições de corrida em leituras/gravações concorrentes
-const operationQueues = new Map<string, Promise<unknown>>();
+// Fila única por usuário e história para serializar leitura, alteração e gravação da história inteira
+const storyQueues = new Map<string, Promise<unknown>>();
 
-export function runSerialized<T>(queueKey: string, task: () => Promise<T>): Promise<T> {
-  const prev = operationQueues.get(queueKey) ?? Promise.resolve();
+export function runStorySerialized<T>(
+  userId: string,
+  storyId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const key = `story:${userId}:${storyId}`;
+  const prev = storyQueues.get(key) ?? Promise.resolve();
   const next = prev.catch(() => undefined).then(task);
   const tracked = next.then(
     () => undefined,
     () => undefined,
   );
-  operationQueues.set(queueKey, tracked);
+  storyQueues.set(key, tracked);
   return next;
 }
 
@@ -35,6 +41,25 @@ function entriesCacheKey(userId: string, storyId: string) {
 
 export function getRecoveryKey(userId: string, storyId: string) {
   return `${RECOVERY_CACHE_PREFIX}:${userId}:${storyId}`;
+}
+
+export async function readTokenFromSecureStore(): Promise<string | null> {
+  const candidateKeys = [
+    'capitulando_token',
+    'capitulando_access_token',
+    'auth_token',
+    'accessToken',
+    'token',
+  ];
+  for (const k of candidateKeys) {
+    try {
+      const val = await SecureStore.getItemAsync(k);
+      if (val && val.trim()) return val.trim();
+    } catch {
+      // Ignora caso a chave não exista
+    }
+  }
+  return null;
 }
 
 export interface WritingApiConfig {
@@ -56,26 +81,41 @@ function buildHeaders(config: WritingApiConfig): Record<string, string> {
   return headers;
 }
 
+async function readCacheUnlocked(
+  userId: string,
+  storyId: string,
+): Promise<{ chapters: WritingEntry[]; drafts: WritingEntry[] }> {
+  const raw = await AsyncStorage.getItem(entriesCacheKey(userId, storyId));
+  if (!raw) return { chapters: [], drafts: [] };
+  try {
+    const parsed = JSON.parse(raw) as {
+      chapters?: WritingEntry[];
+      drafts?: WritingEntry[];
+    };
+    return {
+      chapters: Array.isArray(parsed.chapters) ? parsed.chapters : [],
+      drafts: Array.isArray(parsed.drafts) ? parsed.drafts : [],
+    };
+  } catch {
+    return { chapters: [], drafts: [] };
+  }
+}
+
+async function writeCacheUnlocked(
+  userId: string,
+  storyId: string,
+  data: { chapters: WritingEntry[]; drafts: WritingEntry[] },
+): Promise<void> {
+  await AsyncStorage.setItem(entriesCacheKey(userId, storyId), JSON.stringify(data));
+}
+
 export async function readCachedEntries(
   userId: string,
   storyId: string,
 ): Promise<{ chapters: WritingEntry[]; drafts: WritingEntry[] }> {
-  return runSerialized(`cache:entries:${userId}:${storyId}`, async () => {
-    const raw = await AsyncStorage.getItem(entriesCacheKey(userId, storyId));
-    if (!raw) return { chapters: [], drafts: [] };
-    try {
-      const parsed = JSON.parse(raw) as {
-        chapters?: WritingEntry[];
-        drafts?: WritingEntry[];
-      };
-      return {
-        chapters: Array.isArray(parsed.chapters) ? parsed.chapters : [],
-        drafts: Array.isArray(parsed.drafts) ? parsed.drafts : [],
-      };
-    } catch {
-      return { chapters: [], drafts: [] };
-    }
-  });
+  return runStorySerialized(userId, storyId, () =>
+    readCacheUnlocked(userId, storyId),
+  );
 }
 
 export async function writeCachedEntries(
@@ -83,9 +123,9 @@ export async function writeCachedEntries(
   storyId: string,
   data: { chapters: WritingEntry[]; drafts: WritingEntry[] },
 ): Promise<void> {
-  return runSerialized(`cache:entries:${userId}:${storyId}`, async () => {
-    await AsyncStorage.setItem(entriesCacheKey(userId, storyId), JSON.stringify(data));
-  });
+  return runStorySerialized(userId, storyId, () =>
+    writeCacheUnlocked(userId, storyId, data),
+  );
 }
 
 export async function fetchStoriesFromApi(
@@ -98,10 +138,16 @@ export async function fetchStoriesFromApi(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error?.message || `Falha ao carregar livros (${res.status}).`);
+    throw new Error(
+      body?.error?.message || `Falha ao carregar projetos (${res.status}).`,
+    );
   }
   const data = await res.json();
-  const list = Array.isArray(data?.projects) ? data.projects : Array.isArray(data) ? data : [];
+  const list = Array.isArray(data?.projects)
+    ? data.projects
+    : Array.isArray(data)
+      ? data
+      : [];
   return list.map((item: { id: string; title: string; genre?: string }) => ({
     id: String(item.id),
     title: String(item.title),
@@ -113,45 +159,59 @@ export async function fetchEntriesFromApi(
   config: WritingApiConfig,
   storyId: string,
 ): Promise<{ chapters: WritingEntry[]; drafts: WritingEntry[] }> {
-  if (!config.baseUrl) {
-    return readCachedEntries(config.userId, storyId);
-  }
-  const res = await fetch(
-    `${config.baseUrl}/api/writing/stories/${encodeURIComponent(storyId)}/items`,
-    {
-      method: 'GET',
-      headers: buildHeaders(config),
-    },
-  );
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(
-      body?.error?.message || `Falha ao carregar capítulos e rascunhos (${res.status}).`,
-    );
-  }
-  const data = await res.json();
-  const normalize = (arr: unknown[], kind: WritingItemKind): WritingEntry[] =>
-    (Array.isArray(arr) ? arr : []).map((raw) => {
-      const r = raw as Record<string, unknown>;
-      const content = String(r.content ?? '');
-      return {
-        id: String(r.id),
-        storyId: String(r.story_id ?? r.storyId ?? storyId),
-        title: String(r.title ?? 'Sem Título'),
-        content,
-        kind: (r.kind === 'draft' || r.kind === 'chapter' ? r.kind : kind),
-        wordCount: Number(r.word_count ?? r.wordCount ?? countWords(content)),
-        version: Number(r.version ?? 1),
-        updatedAt: String(r.updated_at ?? r.updatedAt ?? new Date().toISOString()),
-      };
-    });
+  return runStorySerialized(config.userId, storyId, async () => {
+    if (!config.baseUrl) {
+      return readCacheUnlocked(config.userId, storyId);
+    }
 
-  const result = {
-    chapters: normalize(data?.chapters, 'chapter'),
-    drafts: normalize(data?.drafts, 'draft'),
-  };
-  await writeCachedEntries(config.userId, storyId, result);
-  return result;
+    const res = await fetch(
+      `${config.baseUrl}/api/writing/stories/${encodeURIComponent(storyId)}/items`,
+      {
+        method: 'GET',
+        headers: buildHeaders(config),
+      },
+    );
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(
+        body?.error?.message ||
+          `Falha ao carregar capítulos e rascunhos (${res.status}).`,
+      );
+    }
+
+    const data = await res.json();
+    const normalize = (arr: unknown[], kind: WritingItemKind): WritingEntry[] =>
+      (Array.isArray(arr) ? arr : []).map((raw) => {
+        const r = raw as Record<string, unknown>;
+        const content = String(r.content ?? '');
+        const resolvedKind: WritingItemKind =
+          r.kind === 'draft' || r.kind === 'chapter'
+            ? r.kind
+            : r.status === 'DRAFT'
+              ? 'draft'
+              : kind;
+        return {
+          id: String(r.id),
+          storyId: String(r.story_id ?? r.storyId ?? storyId),
+          title: String(r.title ?? 'Sem Título'),
+          content,
+          kind: resolvedKind,
+          wordCount: Number(r.word_count ?? r.wordCount ?? countWords(content)),
+          version: Number(r.version ?? 1),
+          updatedAt: String(
+            r.updated_at ?? r.updatedAt ?? new Date().toISOString(),
+          ),
+        };
+      });
+
+    const result = {
+      chapters: normalize(data?.chapters, 'chapter'),
+      drafts: normalize(data?.drafts, 'draft'),
+    };
+    await writeCacheUnlocked(config.userId, storyId, result);
+    return result;
+  });
 }
 
 export async function saveEntryWithVersionControl(
@@ -165,12 +225,15 @@ export async function saveEntryWithVersionControl(
     expectedVersion?: number;
     forceOverwrite?: boolean;
   },
-): Promise<WritingEntry> {
-  const queueKey = `save:${config.userId}:${input.storyId}:${input.id ?? 'new'}`;
-
-  return runSerialized(queueKey, async () => {
+): Promise<{
+  saved: WritingEntry;
+  storyEntries: { chapters: WritingEntry[]; drafts: WritingEntry[] };
+}> {
+  // Serializa a operação inteira (leitura do cache -> API/gravação -> atualização do cache da história)
+  return runStorySerialized(config.userId, input.storyId, async () => {
     const cleanTitle = input.title.trim() || 'Sem Título';
     const words = countWords(input.content);
+    const currentCache = await readCacheUnlocked(config.userId, input.storyId);
 
     if (config.baseUrl) {
       const isUpdate = Boolean(input.id);
@@ -185,6 +248,7 @@ export async function saveEntryWithVersionControl(
           title: cleanTitle,
           content: input.content,
           kind: input.kind,
+          status: input.kind === 'draft' ? 'DRAFT' : 'IN_REVIEW',
           expectedVersion: input.expectedVersion,
           forceOverwrite: input.forceOverwrite ?? false,
         }),
@@ -200,57 +264,78 @@ export async function saveEntryWithVersionControl(
           serverEntry?: WritingEntry;
         };
         conflictErr.code = 'VERSION_CONFLICT';
-        if (body?.error?.details?.serverItem) {
-          const s = body.error.details.serverItem;
+        const rawServer = body?.error?.details?.serverItem;
+        if (rawServer) {
+          const s = rawServer as Record<string, unknown>;
+          const sContent = String(s.content ?? '');
           conflictErr.serverEntry = {
             id: String(s.id),
-            storyId: String(s.story_id ?? input.storyId),
+            storyId: String(s.story_id ?? s.storyId ?? input.storyId),
             title: String(s.title ?? cleanTitle),
-            content: String(s.content ?? ''),
-            kind: s.kind === 'draft' ? 'draft' : 'chapter',
-            wordCount: Number(s.word_count ?? countWords(String(s.content ?? ''))),
+            content: sContent,
+            kind:
+              s.kind === 'draft' || s.status === 'DRAFT' ? 'draft' : 'chapter',
+            wordCount: Number(s.word_count ?? s.wordCount ?? countWords(sContent)),
             version: Number(s.version ?? 1),
-            updatedAt: String(s.updated_at ?? new Date().toISOString()),
+            updatedAt: String(
+              s.updated_at ?? s.updatedAt ?? new Date().toISOString(),
+            ),
           };
         }
         throw conflictErr;
       }
 
       if (!res.ok) {
-        throw new Error(body?.error?.message || `Erro ao salvar no servidor (${res.status}).`);
+        throw new Error(
+          body?.error?.message || `Erro ao salvar no servidor (${res.status}).`,
+        );
       }
 
-      const r = body?.chapter ?? body;
+      const rawSaved = (body?.chapter ?? body?.item ?? body) as Record<
+        string,
+        unknown
+      >;
+      const savedContent = String(rawSaved.content ?? input.content);
+      const savedKind: WritingItemKind =
+        rawSaved.kind === 'draft' || rawSaved.kind === 'chapter'
+          ? rawSaved.kind
+          : rawSaved.status === 'DRAFT'
+            ? 'draft'
+            : input.kind;
+
       const saved: WritingEntry = {
-        id: String(r.id),
-        storyId: String(r.story_id ?? r.storyId ?? input.storyId),
-        title: String(r.title ?? cleanTitle),
-        content: String(r.content ?? input.content),
-        kind: r.kind === 'draft' || r.kind === 'chapter' ? r.kind : input.kind,
-        wordCount: Number(r.word_count ?? r.wordCount ?? words),
-        version: Number(r.version ?? 1),
-        updatedAt: String(r.updated_at ?? r.updatedAt ?? new Date().toISOString()),
+        id: String(rawSaved.id),
+        storyId: String(
+          rawSaved.story_id ?? rawSaved.storyId ?? input.storyId,
+        ),
+        title: String(rawSaved.title ?? cleanTitle),
+        content: savedContent,
+        kind: savedKind,
+        wordCount: Number(
+          rawSaved.word_count ?? rawSaved.wordCount ?? countWords(savedContent),
+        ),
+        version: Number(rawSaved.version ?? 1),
+        updatedAt: String(
+          rawSaved.updated_at ?? rawSaved.updatedAt ?? new Date().toISOString(),
+        ),
       };
 
-      const currentCache = await readCachedEntries(config.userId, input.storyId);
-      const targetKey = saved.kind === 'chapter' ? 'chapters' : 'drafts';
-      const otherKey = saved.kind === 'chapter' ? 'drafts' : 'chapters';
-      await writeCachedEntries(config.userId, input.storyId, {
+      const nextEntries = {
         chapters: [
           ...currentCache.chapters.filter((c) => c.id !== saved.id),
-          ...(targetKey === 'chapters' ? [saved] : []),
-        ].filter((c) => !(otherKey === 'chapters' && c.id === saved.id)),
+          ...(saved.kind === 'chapter' ? [saved] : []),
+        ],
         drafts: [
           ...currentCache.drafts.filter((d) => d.id !== saved.id),
-          ...(targetKey === 'drafts' ? [saved] : []),
-        ].filter((d) => !(otherKey === 'drafts' && d.id === saved.id)),
-      });
+          ...(saved.kind === 'draft' ? [saved] : []),
+        ],
+      };
 
-      return saved;
+      await writeCacheUnlocked(config.userId, input.storyId, nextEntries);
+      return { saved, storyEntries: nextEntries };
     }
 
-    // Fallback local atômico serializado quando não há baseUrl configurada
-    const currentCache = await readCachedEntries(config.userId, input.storyId);
+    // Fallback local serializado pela fila da história inteira
     const all = [...currentCache.chapters, ...currentCache.drafts];
     const now = new Date().toISOString();
 
@@ -282,14 +367,13 @@ export async function saveEntryWithVersionControl(
         updatedAt: now,
       };
 
-      const remaining = all.filter((item) => item.id !== input.id);
-      const merged = [...remaining, updated];
-      const nextCache = {
+      const merged = [...all.filter((item) => item.id !== input.id), updated];
+      const nextEntries = {
         chapters: merged.filter((m) => m.kind === 'chapter'),
         drafts: merged.filter((m) => m.kind === 'draft'),
       };
-      await writeCachedEntries(config.userId, input.storyId, nextCache);
-      return updated;
+      await writeCacheUnlocked(config.userId, input.storyId, nextEntries);
+      return { saved: updated, storyEntries: nextEntries };
     }
 
     const created: WritingEntry = {
@@ -304,11 +388,12 @@ export async function saveEntryWithVersionControl(
     };
 
     const merged = [...all, created];
-    await writeCachedEntries(config.userId, input.storyId, {
+    const nextEntries = {
       chapters: merged.filter((m) => m.kind === 'chapter'),
       drafts: merged.filter((m) => m.kind === 'draft'),
-    });
-    return created;
+    };
+    await writeCacheUnlocked(config.userId, input.storyId, nextEntries);
+    return { saved: created, storyEntries: nextEntries };
   });
 }
 
@@ -316,7 +401,7 @@ export async function loadLocalRecovery(
   userId: string,
   storyId: string,
 ): Promise<WritingRecoveryState | null> {
-  return runSerialized(`recovery:${userId}:${storyId}`, async () => {
+  return runStorySerialized(userId, storyId, async () => {
     const raw = await AsyncStorage.getItem(getRecoveryKey(userId, storyId));
     if (!raw) return null;
     try {
@@ -332,8 +417,11 @@ export async function saveLocalRecovery(
   storyId: string,
   state: WritingRecoveryState,
 ): Promise<void> {
-  return runSerialized(`recovery:${userId}:${storyId}`, async () => {
-    await AsyncStorage.setItem(getRecoveryKey(userId, storyId), JSON.stringify(state));
+  return runStorySerialized(userId, storyId, async () => {
+    await AsyncStorage.setItem(
+      getRecoveryKey(userId, storyId),
+      JSON.stringify(state),
+    );
   });
 }
 
@@ -341,7 +429,7 @@ export async function clearLocalRecovery(
   userId: string,
   storyId: string,
 ): Promise<void> {
-  return runSerialized(`recovery:${userId}:${storyId}`, async () => {
+  return runStorySerialized(userId, storyId, async () => {
     await AsyncStorage.removeItem(getRecoveryKey(userId, storyId));
   });
 }
@@ -361,20 +449,22 @@ export async function fetchRemoteRecoveryFromApi(
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(
-      body?.error?.message || `Falha ao buscar recuperação remota (${res.status}).`,
+      body?.error?.message ||
+        `Falha ao buscar recuperação remota (${res.status}).`,
     );
   }
   const data = await res.json();
-  if (!data || !data.content) return null;
+  const rec = data?.recovery ?? data;
+  if (!rec || !rec.content) return null;
   return {
-    storyId: String(data.projectId ?? data.storyId ?? storyId),
-    itemId: data.chapterId ?? data.itemId ?? null,
-    kind: data.kind === 'draft' ? 'draft' : 'chapter',
-    title: String(data.title ?? 'Novo Capítulo'),
-    content: String(data.content ?? ''),
-    version: Number(data.version ?? 1),
-    sessionId: String(data.sessionId ?? ''),
-    updatedAt: String(data.updatedAt ?? new Date().toISOString()),
+    storyId: String(rec.projectId ?? rec.storyId ?? storyId),
+    itemId: rec.chapterId ?? rec.itemId ?? null,
+    kind: rec.kind === 'draft' || rec.type === 'draft' ? 'draft' : 'chapter',
+    title: String(rec.title ?? 'Novo Capítulo'),
+    content: String(rec.content ?? ''),
+    version: Number(rec.version ?? 1),
+    sessionId: String(rec.sessionId ?? ''),
+    updatedAt: String(rec.updatedAt ?? new Date().toISOString()),
   };
 }
 
@@ -385,69 +475,81 @@ export async function syncRemoteRecoveryToApi(
 ): Promise<WritingRecoveryState | null> {
   if (!config.baseUrl) return state;
 
-  const payload = state
-    ? {
-        projectId: state.storyId,
-        chapterId: state.itemId,
-        kind: state.kind,
-        title: state.title,
-        content: state.content,
-        expectedVersion: state.version,
-        forceOverwrite,
-      }
-    : {
-        projectId: null,
-        chapterId: null,
-        kind: 'chapter',
-        title: '',
-        content: '',
-        forceOverwrite: true,
+  const targetStoryId = state?.storyId || '';
+  const execute = async (): Promise<WritingRecoveryState | null> => {
+    const payload = state
+      ? {
+          projectId: state.storyId,
+          storyId: state.storyId,
+          chapterId: state.itemId,
+          kind: state.kind,
+          type: state.kind,
+          title: state.title,
+          content: state.content,
+          expectedVersion: state.version,
+          forceOverwrite,
+        }
+      : {
+          projectId: null,
+          storyId: null,
+          kind: 'chapter',
+          title: '',
+          content: '',
+          forceOverwrite: true,
+        };
+
+    const res = await fetch(`${config.baseUrl}/api/writing/workspace`, {
+      method: 'PUT',
+      headers: buildHeaders(config),
+      body: JSON.stringify(payload),
+    });
+
+    const body = await res.json().catch(() => ({}));
+
+    if (res.status === 409 && body?.error?.details?.serverState) {
+      const s = body.error.details.serverState as Record<string, unknown>;
+      const conflictErr = new Error(
+        body?.error?.message || 'Conflito entre sessões no espaço de escrita.',
+      ) as Error & {
+        code?: string;
+        remoteConflict?: WritingRecoveryState;
       };
+      conflictErr.code = 'SESSION_CONFLICT';
+      conflictErr.remoteConflict = {
+        storyId: String(s.projectId ?? s.storyId ?? state?.storyId ?? ''),
+        itemId: (s.chapterId ?? s.itemId ?? null) as string | null,
+        kind: s.kind === 'draft' || s.type === 'draft' ? 'draft' : 'chapter',
+        title: String(s.title ?? 'Novo Capítulo'),
+        content: String(s.content ?? ''),
+        version: Number(s.version ?? 1),
+        sessionId: String(s.sessionId ?? ''),
+        updatedAt: String(s.updatedAt ?? new Date().toISOString()),
+      };
+      throw conflictErr;
+    }
 
-  const res = await fetch(`${config.baseUrl}/api/writing/workspace`, {
-    method: 'PUT',
-    headers: buildHeaders(config),
-    body: JSON.stringify(payload),
-  });
+    if (!res.ok) {
+      throw new Error(
+        body?.error?.message ||
+          `Falha ao sincronizar recuperação (${res.status}).`,
+      );
+    }
 
-  const body = await res.json().catch(() => ({}));
+    const savedRec = body?.recovery ?? body;
+    if (!state || body?.cleared) return null;
 
-  if (res.status === 409 && body?.error?.details?.serverState) {
-    const s = body.error.details.serverState;
-    const conflictErr = new Error(
-      body?.error?.message || 'Conflito entre sessões no espaço de escrita.',
-    ) as Error & {
-      code?: string;
-      remoteConflict?: WritingRecoveryState;
+    return {
+      ...state,
+      version: Number(savedRec?.version ?? state.version),
+      sessionId: String(savedRec?.sessionId ?? state.sessionId),
+      updatedAt: String(savedRec?.updatedAt ?? new Date().toISOString()),
     };
-    conflictErr.code = 'SESSION_CONFLICT';
-    conflictErr.remoteConflict = {
-      storyId: String(s.projectId ?? s.storyId ?? state?.storyId ?? ''),
-      itemId: s.chapterId ?? s.itemId ?? null,
-      kind: s.kind === 'draft' ? 'draft' : 'chapter',
-      title: String(s.title ?? 'Novo Capítulo'),
-      content: String(s.content ?? ''),
-      version: Number(s.version ?? 1),
-      sessionId: String(s.sessionId ?? ''),
-      updatedAt: String(s.updatedAt ?? new Date().toISOString()),
-    };
-    throw conflictErr;
-  }
-
-  if (!res.ok) {
-    throw new Error(
-      body?.error?.message || `Falha ao sincronizar espaço de escrita (${res.status}).`,
-    );
-  }
-
-  if (!state || body?.cleared) return null;
-
-  return {
-    ...state,
-    version: Number(body?.version ?? state.version),
-    sessionId: String(body?.sessionId ?? state.sessionId),
-    updatedAt: String(body?.updatedAt ?? new Date().toISOString()),
   };
+
+  if (targetStoryId) {
+    return runStorySerialized(config.userId, targetStoryId, execute);
+  }
+  return execute();
 }
 
 export function detectRecoveryConflict(

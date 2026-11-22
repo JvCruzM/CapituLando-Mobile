@@ -1,94 +1,116 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
+import { useRouter, useLocalSearchParams, useSegments, type Href } from 'expo-router';
 import {
   WritingScreen,
   fetchStoriesFromApi,
+  readTokenFromSecureStore,
   type WritingRecoveryState,
   type WritingStorySummary,
 } from '../features/writing';
-
-interface SessionUser {
-  id: string;
-  token?: string | null;
-}
+import { useAuthStore } from '../store/useAuthStore';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
-const LOGIN_ROUTE = '/login' as Href;
+const ENTRAR_ROUTE = '/entrar' as Href;
 
 export default function EscritaRoute() {
   const router = useRouter();
+  const segments = useSegments();
   const params = useLocalSearchParams<{ storyId?: string }>();
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
-  const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const authState = useAuthStore();
+  const storeUser = authState?.user;
+  const storeToken = authState?.token ?? authState?.accessToken ?? null;
+  const isAuthenticatedStore =
+    typeof authState?.isAuthenticated === 'boolean'
+      ? authState.isAuthenticated
+      : Boolean(storeUser?.id || storeToken);
+
+  const [checkingSession, setCheckingSession] = useState(true);
+  const [resolvedUserId, setResolvedUserId] = useState<string | null>(null);
+  const [resolvedToken, setResolvedToken] = useState<string | null>(null);
   const [stories, setStories] = useState<WritingStorySummary[]>([]);
   const [selectedStoryId, setSelectedStoryId] = useState<string>('');
-  const [remoteRecovery, setRemoteRecovery] = useState<WritingRecoveryState | null>(null);
+  const [remoteRecovery, setRemoteRecovery] =
+    useState<WritingRecoveryState | null>(null);
+
+  // Proteção de navegação para a rota de escrita
+  useEffect(() => {
+    const currentRoute = segments.join('/');
+    const isWritingRoute =
+      currentRoute === 'escrita' || currentRoute.endsWith('/escrita');
+
+    if (isWritingRoute && !checkingSession && !resolvedUserId) {
+      router.replace(ENTRAR_ROUTE);
+    }
+  }, [checkingSession, resolvedUserId, router, segments]);
 
   useEffect(() => {
     let active = true;
 
-    async function loadSessionAndStories() {
+    async function hydrateSessionAndStories() {
+      setCheckingSession(true);
       try {
-        const rawUser = await AsyncStorage.getItem('capitulando_auth_user');
-        const token = await AsyncStorage.getItem('capitulando_access_token');
+        const secureToken = storeToken || (await readTokenFromSecureStore());
+        const userObj = storeUser as
+          | { id?: string; userId?: string; sub?: string }
+          | undefined;
+        const uid =
+          userObj?.id ||
+          userObj?.userId ||
+          userObj?.sub ||
+          (secureToken && isAuthenticatedStore
+            ? `user_${secureToken.slice(-10)}`
+            : null);
 
-        if (!rawUser && !token) {
-          router.replace(LOGIN_ROUTE);
-          return;
-        }
-
-        let parsedUser: SessionUser | null = null;
-        if (rawUser) {
-          const obj = JSON.parse(rawUser) as { id?: string; userId?: string; sub?: string };
-          const resolvedId = obj.id || obj.userId || obj.sub;
-          if (resolvedId) {
-            parsedUser = { id: String(resolvedId), token };
+        if (!uid) {
+          if (active) {
+            setResolvedUserId(null);
+            setResolvedToken(null);
           }
-        }
-
-        if (!parsedUser && token) {
-          parsedUser = { id: `user_${token.slice(-10)}`, token };
-        }
-
-        if (!parsedUser) {
-          router.replace(LOGIN_ROUTE);
+          router.replace(ENTRAR_ROUTE);
           return;
         }
 
         if (!active) return;
-        setSessionUser(parsedUser);
+        const cleanUserId = String(uid);
+        setResolvedUserId(cleanUserId);
+        setResolvedToken(secureToken ?? null);
 
         let loadedStories: WritingStorySummary[] = [];
         if (API_BASE_URL) {
           loadedStories = await fetchStoriesFromApi({
             baseUrl: API_BASE_URL,
-            token: parsedUser.token,
-            userId: parsedUser.id,
+            token: secureToken ?? null,
+            userId: cleanUserId,
             sessionId: `route_${Date.now()}`,
           }).catch(() => []);
         }
 
         if (loadedStories.length === 0) {
-          const cachedProjectsRaw = await AsyncStorage.getItem('capitulando_projects');
+          const cachedProjectsRaw = await AsyncStorage.getItem(
+            `capitulando:${cleanUserId}:projects`,
+          );
           if (cachedProjectsRaw) {
             const parsed = JSON.parse(cachedProjectsRaw);
             if (Array.isArray(parsed)) {
-              loadedStories = parsed.map((p: { id: string; title: string; genre?: string }) => ({
-                id: String(p.id),
-                title: String(p.title),
-                genre: p.genre,
-              }));
+              loadedStories = parsed.map(
+                (p: { id: string; title: string; genre?: string }) => ({
+                  id: String(p.id),
+                  title: String(p.title),
+                  genre: p.genre,
+                }),
+              );
             }
           }
         }
 
-        const activeStoryFromStorage = await AsyncStorage.getItem('capitulando_active_story_id');
+        const activeStoryKey = `capitulando:${cleanUserId}:active_story_id`;
+        const storedStoryId = await AsyncStorage.getItem(activeStoryKey);
         const chosenStoryId =
           (params.storyId && String(params.storyId)) ||
-          activeStoryFromStorage ||
+          storedStoryId ||
           loadedStories[0]?.id ||
           '';
 
@@ -96,31 +118,39 @@ export default function EscritaRoute() {
         setStories(loadedStories);
         setSelectedStoryId(chosenStoryId);
       } finally {
-        if (active) setCheckingAuth(false);
+        if (active) setCheckingSession(false);
       }
     }
 
-    void loadSessionAndStories();
+    void hydrateSessionAndStories();
     return () => {
       active = false;
     };
-  }, [params.storyId, router]);
+  }, [isAuthenticatedStore, params.storyId, router, storeToken, storeUser]);
 
-  const handleSelectStory = useCallback(async (nextStoryId: string) => {
-    setSelectedStoryId(nextStoryId);
-    await AsyncStorage.setItem('capitulando_active_story_id', nextStoryId);
-  }, []);
+  const handleSelectStory = useCallback(
+    async (nextStoryId: string) => {
+      setSelectedStoryId(nextStoryId);
+      if (resolvedUserId) {
+        await AsyncStorage.setItem(
+          `capitulando:${resolvedUserId}:active_story_id`,
+          nextStoryId,
+        );
+      }
+    },
+    [resolvedUserId],
+  );
 
-  if (checkingAuth) {
+  if (checkingSession) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="small" color="#4b1d3f" />
-        <Text style={styles.text}>Verificando sessão do escritor...</Text>
+        <Text style={styles.text}>Verificando sessão...</Text>
       </View>
     );
   }
 
-  if (!sessionUser) {
+  if (!resolvedUserId) {
     return null;
   }
 
@@ -129,7 +159,7 @@ export default function EscritaRoute() {
       <View style={styles.center}>
         <Text style={styles.title}>Nenhum livro selecionado</Text>
         <Text style={styles.text}>
-          Crie ou selecione um livro nos seus projetos antes de abrir o espaço de escrita.
+          Selecione ou crie um livro antes de abrir o espaço de escrita.
         </Text>
       </View>
     );
@@ -137,12 +167,12 @@ export default function EscritaRoute() {
 
   return (
     <WritingScreen
-      userId={sessionUser.id}
+      userId={resolvedUserId}
       storyId={selectedStoryId}
       stories={stories}
       onSelectStory={(id) => void handleSelectStory(id)}
       apiBaseUrl={API_BASE_URL || undefined}
-      authToken={sessionUser.token}
+      authToken={resolvedToken}
       remoteRecovery={remoteRecovery}
       onRemoteRecoveryChange={setRemoteRecovery}
     />
