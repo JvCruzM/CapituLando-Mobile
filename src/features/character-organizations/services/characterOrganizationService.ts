@@ -8,9 +8,9 @@ export interface OrganizationOption {
 
 export interface CharacterOrganizationRecord {
   id: string;
-  story: { id: string };
-  character: { id: string };
-  organization: { id: string };
+  storyId: string;
+  characterId: string;
+  organizationId: string;
   role?: string | null;
   joinedAt?: string | null;
   isActive: boolean;
@@ -18,50 +18,69 @@ export interface CharacterOrganizationRecord {
   updatedAt?: string;
 }
 
-export interface SaveCharacterOrganizationPayload {
-  story: { id: string };
-  character: { id: string };
-  organization: { id: string };
+export interface CreateCharacterOrganizationPayload {
+  characterId: string;
+  organizationId: string;
   role?: string | null;
   joinedAt?: string | null;
-  isActive: boolean;
+  isActive?: boolean;
 }
 
-export async function listStoryOrganizations(storyId: string): Promise<OrganizationOption[]> {
-  return accountRequest<OrganizationOption[]>("/world/organizations", {
-    query: { storyId },
+export interface UpdateCharacterOrganizationPayload {
+  role?: string | null;
+  joinedAt?: string | null;
+  isActive?: boolean;
+}
+
+export async function listStoryOrganizations(
+  storyId: string,
+): Promise<OrganizationOption[]> {
+  return accountRequest<OrganizationOption[]>({
+    url: `/api/stories/${storyId}/organizations`,
+    method: "GET",
   });
 }
 
 export async function listCharacterOrganizations(
-  storyId: string
+  storyId: string,
+  characterId?: string,
 ): Promise<CharacterOrganizationRecord[]> {
-  return accountRequest<CharacterOrganizationRecord[]>("/world/character-organizations", {
-    query: { storyId },
+  return accountRequest<CharacterOrganizationRecord[]>({
+    url: `/api/stories/${storyId}/character-organizations`,
+    method: "GET",
+    params: characterId ? { characterId } : undefined,
   });
 }
 
 export async function createCharacterOrganization(
-  payload: SaveCharacterOrganizationPayload
+  storyId: string,
+  payload: CreateCharacterOrganizationPayload,
 ): Promise<CharacterOrganizationRecord> {
-  return accountRequest<CharacterOrganizationRecord>("/world/character-organizations", {
+  return accountRequest<CharacterOrganizationRecord>({
+    url: `/api/stories/${storyId}/character-organizations`,
     method: "POST",
-    body: payload,
+    data: payload,
   });
 }
 
 export async function updateCharacterOrganization(
-  id: string,
-  payload: SaveCharacterOrganizationPayload
+  storyId: string,
+  linkId: string,
+  payload: UpdateCharacterOrganizationPayload,
 ): Promise<CharacterOrganizationRecord> {
-  return accountRequest<CharacterOrganizationRecord>(`/world/character-organizations/${id}`, {
+  return accountRequest<CharacterOrganizationRecord>({
+    url: `/api/stories/${storyId}/character-organizations/${linkId}`,
     method: "PUT",
-    body: payload,
+    data: payload,
   });
 }
 
-export async function deleteCharacterOrganization(id: string): Promise<void> {
-  await accountRequest<void>(`/world/character-organizations/${id}`, {
+export async function deleteCharacterOrganization(
+  storyId: string,
+  linkId: string,
+): Promise<void> {
+  await accountRequest<void>({
+    url: `/api/stories/${storyId}/character-organizations/${linkId}`,
     method: "DELETE",
   });
 }
