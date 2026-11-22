@@ -74,3 +74,27 @@ export interface UniverseStats {
   totalTimeline: number;
   byCategory: Record<EncyclopediaCategory, number>;
 }
+
+export type WritingItemKind = 'chapter' | 'draft';
+
+export interface WritingEntry {
+  id: string;
+  storyId: string;
+  title: string;
+  content: string;
+  kind: WritingItemKind;
+  wordCount: number;
+  version: number;
+  updatedAt: string;
+}
+
+export interface WritingRecoveryState {
+  storyId: string;
+  itemId: string | null;
+  kind: WritingItemKind;
+  title: string;
+  content: string;
+  version: number;
+  sessionId: string;
+  updatedAt: string;
+}
