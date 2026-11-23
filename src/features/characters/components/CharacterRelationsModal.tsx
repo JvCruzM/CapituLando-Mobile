@@ -9,6 +9,7 @@ import {
   IconButton,
   Portal,
   Surface,
+  Switch,
   Text,
   TextInput,
   useTheme,
@@ -37,13 +38,24 @@ interface CharacterRelationsModalProps {
     joinedAt?: string | null;
     isActive: boolean;
   }) => Promise<unknown>;
+  onUpdateOrganization: (params: {
+    linkId: string;
+    payload: {
+      role?: string | null;
+      joinedAt?: string | null;
+      isActive: boolean;
+    };
+  }) => Promise<unknown>;
   onRemoveOrganization: (linkId: string) => Promise<unknown>;
-  onSaveRelationship: (payload: {
-    sourceCharacterId: string;
-    targetCharacterId: string;
-    type: string;
-    description?: string | null;
-    level?: number | null;
+  onSaveRelationship: (params: {
+    relationshipId?: string;
+    payload: {
+      sourceCharacterId: string;
+      targetCharacterId: string;
+      type: string;
+      description?: string | null;
+      level?: number | null;
+    };
   }) => Promise<unknown>;
   onRemoveRelationship: (relationshipId: string) => Promise<unknown>;
 }
@@ -67,15 +79,24 @@ export function CharacterRelationsModal({
   busy,
   onDismiss,
   onAddOrganization,
+  onUpdateOrganization,
   onRemoveOrganization,
   onSaveRelationship,
   onRemoveRelationship,
 }: CharacterRelationsModalProps) {
   const theme = useTheme();
+
+  // Estado Organização (Criar / Editar)
+  const [editingOrgLinkId, setEditingOrgLinkId] = useState<string | null>(null);
   const [selectedOrgId, setSelectedOrgId] = useState("");
   const [orgRole, setOrgRole] = useState("");
   const [orgJoinedAt, setOrgJoinedAt] = useState("");
+  const [orgIsActive, setOrgIsActive] = useState(true);
 
+  // Estado Relacionamento (Criar / Editar)
+  const [editingRelationshipId, setEditingRelationshipId] = useState<
+    string | null
+  >(null);
   const [targetCharId, setTargetCharId] = useState("");
   const [relType, setRelType] = useState("Aliado");
   const [relDescription, setRelDescription] = useState("");
@@ -102,31 +123,80 @@ export function CharacterRelationsModal({
   const orgNameById = new Map(organizations.map((o) => [o.id, o.name]));
   const charNameById = new Map(allCharacters.map((c) => [c.id, c.name]));
 
-  async function handleAddOrganization() {
-    if (!character || !selectedOrgId) {
+  function resetOrgForm() {
+    setEditingOrgLinkId(null);
+    setSelectedOrgId("");
+    setOrgRole("");
+    setOrgJoinedAt("");
+    setOrgIsActive(true);
+  }
+
+  function startEditOrganization(link: CharacterOrganizationRecord) {
+    setError("");
+    setEditingOrgLinkId(link.id);
+    setSelectedOrgId(link.organizationId);
+    setOrgRole(link.role ?? "");
+    setOrgJoinedAt(link.joinedAt ?? "");
+    setOrgIsActive(link.isActive !== false);
+  }
+
+  async function handleSubmitOrganization() {
+    if (!character) return;
+    if (!editingOrgLinkId && !selectedOrgId) {
       setError("Selecione uma organização para vincular.");
       return;
     }
     setError("");
     try {
-      await onAddOrganization({
-        characterId: character.id,
-        organizationId: selectedOrgId,
-        role: orgRole.trim() || null,
-        joinedAt: orgJoinedAt.trim() || null,
-        isActive: true,
-      });
-      setSelectedOrgId("");
-      setOrgRole("");
-      setOrgJoinedAt("");
+      if (editingOrgLinkId) {
+        await onUpdateOrganization({
+          linkId: editingOrgLinkId,
+          payload: {
+            role: orgRole.trim() || null,
+            joinedAt: orgJoinedAt.trim() || null,
+            isActive: orgIsActive,
+          },
+        });
+      } else {
+        await onAddOrganization({
+          characterId: character.id,
+          organizationId: selectedOrgId,
+          role: orgRole.trim() || null,
+          joinedAt: orgJoinedAt.trim() || null,
+          isActive: orgIsActive,
+        });
+      }
+      resetOrgForm();
     } catch (cause) {
       setError(accountErrorMessage(cause));
     }
   }
 
-  async function handleAddRelationship() {
+  function resetRelationshipForm() {
+    setEditingRelationshipId(null);
+    setTargetCharId("");
+    setRelType("Aliado");
+    setRelDescription("");
+    setRelLevel("5");
+  }
+
+  function startEditRelationship(rel: CharacterRelationshipRecord) {
+    if (!character) return;
+    setError("");
+    const otherId =
+      rel.sourceCharacterId === character.id
+        ? rel.targetCharacterId
+        : rel.sourceCharacterId;
+    setEditingRelationshipId(rel.id);
+    setTargetCharId(otherId);
+    setRelType(rel.type);
+    setRelDescription(rel.description ?? "");
+    setRelLevel(rel.level ? String(rel.level) : "5");
+  }
+
+  async function handleSubmitRelationship() {
     if (!character || !targetCharId) {
-      setError("Selecione outro personagem para criar o relacionamento.");
+      setError("Selecione outro personagem para o relacionamento.");
       return;
     }
     if (!relType.trim()) {
@@ -137,17 +207,19 @@ export function CharacterRelationsModal({
     try {
       const parsedLevel = parseInt(relLevel, 10);
       await onSaveRelationship({
-        sourceCharacterId: character.id,
-        targetCharacterId: targetCharId,
-        type: relType.trim(),
-        description: relDescription.trim() || null,
-        level:
-          Number.isFinite(parsedLevel) && parsedLevel >= 1 && parsedLevel <= 10
-            ? parsedLevel
-            : null,
+        relationshipId: editingRelationshipId ?? undefined,
+        payload: {
+          sourceCharacterId: character.id,
+          targetCharacterId: targetCharId,
+          type: relType.trim(),
+          description: relDescription.trim() || null,
+          level:
+            Number.isFinite(parsedLevel) && parsedLevel >= 1 && parsedLevel <= 10
+              ? parsedLevel
+              : null,
+        },
       });
-      setTargetCharId("");
-      setRelDescription("");
+      resetRelationshipForm();
     } catch (cause) {
       setError(accountErrorMessage(cause));
     }
@@ -178,65 +250,112 @@ export function CharacterRelationsModal({
                   <View style={styles.linkInfo}>
                     <Text variant="labelLarge">
                       {orgNameById.get(link.organizationId) ?? "Organização"}
+                      {!link.isActive ? " (Inativo)" : ""}
                     </Text>
                     <Text variant="bodySmall" style={styles.muted}>
-                      {[link.role, link.joinedAt].filter(Boolean).join(" • ") ||
-                        "Membro ativo"}
+                      {[
+                        link.role,
+                        link.joinedAt,
+                        link.isActive ? "Participação ativa" : "Inativo",
+                      ]
+                        .filter(Boolean)
+                        .join(" • ")}
                     </Text>
                   </View>
+                  <IconButton
+                    icon="pencil-outline"
+                    disabled={busy}
+                    onPress={() => startEditOrganization(link)}
+                  />
                   <IconButton
                     icon="delete-outline"
                     iconColor={theme.colors.error}
                     disabled={busy}
-                    onPress={() => void onRemoveOrganization(link.id)}
+                    onPress={() => {
+                      if (editingOrgLinkId === link.id) resetOrgForm();
+                      void onRemoveOrganization(link.id);
+                    }}
                   />
                 </Surface>
               ))
             )}
 
-            {availableOrgs.length > 0 ? (
+            {editingOrgLinkId || availableOrgs.length > 0 ? (
               <View style={styles.formBox}>
-                <Text variant="labelMedium">Adicionar organização:</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chipsRow}
-                >
-                  {availableOrgs.map((org) => (
-                    <Chip
-                      key={org.id}
-                      selected={selectedOrgId === org.id}
-                      onPress={() => setSelectedOrgId(org.id)}
-                    >
-                      {org.name}
-                    </Chip>
-                  ))}
-                </ScrollView>
+                <Text variant="labelMedium">
+                  {editingOrgLinkId
+                    ? `Editando participação em ${orgNameById.get(selectedOrgId) ?? "Organização"}:`
+                    : "Adicionar organização:"}
+                </Text>
+
+                {!editingOrgLinkId ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chipsRow}
+                  >
+                    {availableOrgs.map((org) => (
+                      <Chip
+                        key={org.id}
+                        selected={selectedOrgId === org.id}
+                        onPress={() => setSelectedOrgId(org.id)}
+                      >
+                        {org.name}
+                      </Chip>
+                    ))}
+                  </ScrollView>
+                ) : null}
+
                 <View style={styles.row}>
                   <TextInput
                     mode="outlined"
-                    label="Cargo / Patente"
+                    label="Papel / Cargo"
                     value={orgRole}
                     onChangeText={setOrgRole}
                     style={styles.flex}
                   />
                   <TextInput
                     mode="outlined"
-                    label="Ingresso"
+                    label="Data de entrada"
                     value={orgJoinedAt}
                     onChangeText={setOrgJoinedAt}
                     placeholder="Ex: Ano 12"
                     style={styles.flex}
                   />
                 </View>
-                <Button
-                  mode="contained-tonal"
-                  icon="bank-plus"
-                  disabled={busy || !selectedOrgId}
-                  onPress={() => void handleAddOrganization()}
-                >
-                  Vincular Organização
-                </Button>
+
+                <View style={styles.switchRow}>
+                  <Text variant="bodyMedium">Participação ativa</Text>
+                  <Switch
+                    value={orgIsActive}
+                    onValueChange={setOrgIsActive}
+                    disabled={busy}
+                  />
+                </View>
+
+                <View style={styles.row}>
+                  {editingOrgLinkId ? (
+                    <Button
+                      mode="outlined"
+                      disabled={busy}
+                      onPress={resetOrgForm}
+                      style={styles.flex}
+                    >
+                      Cancelar
+                    </Button>
+                  ) : null}
+                  <Button
+                    mode="contained-tonal"
+                    icon={editingOrgLinkId ? "content-save" : "bank-plus"}
+                    disabled={busy || (!editingOrgLinkId && !selectedOrgId)}
+                    onPress={() => void handleSubmitOrganization()}
+                    style={styles.flex}
+                  >
+                    {editingOrgLinkId
+                      ? "Salvar Participação"
+                      : "Vincular Organização"}
+                  </Button>
+                </View>
               </View>
             ) : null}
 
@@ -270,10 +389,19 @@ export function CharacterRelationsModal({
                       ) : null}
                     </View>
                     <IconButton
+                      icon="pencil-outline"
+                      disabled={busy}
+                      onPress={() => startEditRelationship(rel)}
+                    />
+                    <IconButton
                       icon="delete-outline"
                       iconColor={theme.colors.error}
                       disabled={busy}
-                      onPress={() => void onRemoveRelationship(rel.id)}
+                      onPress={() => {
+                        if (editingRelationshipId === rel.id)
+                          resetRelationshipForm();
+                        void onRemoveRelationship(rel.id);
+                      }}
                     />
                   </Surface>
                 );
@@ -282,7 +410,11 @@ export function CharacterRelationsModal({
 
             {otherCharacters.length > 0 ? (
               <View style={styles.formBox}>
-                <Text variant="labelMedium">Novo relacionamento:</Text>
+                <Text variant="labelMedium">
+                  {editingRelationshipId
+                    ? "Editando relacionamento:"
+                    : "Novo relacionamento:"}
+                </Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -337,14 +469,31 @@ export function CharacterRelationsModal({
                   onChangeText={setRelDescription}
                   placeholder="Histórico ou dinâmica entre eles..."
                 />
-                <Button
-                  mode="contained-tonal"
-                  icon="account-heart"
-                  disabled={busy || !targetCharId}
-                  onPress={() => void handleAddRelationship()}
-                >
-                  Adicionar Relacionamento
-                </Button>
+                <View style={styles.row}>
+                  {editingRelationshipId ? (
+                    <Button
+                      mode="outlined"
+                      disabled={busy}
+                      onPress={resetRelationshipForm}
+                      style={styles.flex}
+                    >
+                      Cancelar
+                    </Button>
+                  ) : null}
+                  <Button
+                    mode="contained-tonal"
+                    icon={
+                      editingRelationshipId ? "content-save" : "account-heart"
+                    }
+                    disabled={busy || !targetCharId}
+                    onPress={() => void handleSubmitRelationship()}
+                    style={styles.flex}
+                  >
+                    {editingRelationshipId
+                      ? "Salvar Relacionamento"
+                      : "Adicionar Relacionamento"}
+                  </Button>
+                </View>
               </View>
             ) : null}
 
@@ -403,6 +552,12 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     gap: 8,
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
   },
   flex: {
     flex: 1,
