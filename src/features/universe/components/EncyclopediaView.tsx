@@ -123,6 +123,12 @@ export function EncyclopediaView({ onSelectItem }: EncyclopediaViewProps) {
                   ]}
                   elevation={1}
                 >
+                  {item.image ? (
+                    <Card.Cover
+                      source={{ uri: item.image }}
+                      style={styles.cardCover}
+                    />
+                  ) : null}
                   <Card.Content style={styles.cardContent}>
                     <View style={styles.cardHeader}>
                       <Surface
@@ -169,6 +175,49 @@ export function EncyclopediaView({ onSelectItem }: EncyclopediaViewProps) {
                         {meta?.singular ?? item.category}
                       </Chip>
                     </View>
+
+                    {(item.raceName ||
+                      item.parentLocationName ||
+                      item.headquartersLocationName ||
+                      (item.category === "theme" && item.conceptCategory)) && (
+                      <View style={styles.relationBadgeRow}>
+                        {item.category === "creatures" && item.raceName ? (
+                          <Chip compact icon="dna" style={styles.relationChip}>
+                            Raça: {item.raceName}
+                          </Chip>
+                        ) : null}
+                        {item.category === "locations" &&
+                        item.parentLocationName ? (
+                          <Chip
+                            compact
+                            icon="map-marker-radius"
+                            style={styles.relationChip}
+                          >
+                            Pai: {item.parentLocationName}
+                          </Chip>
+                        ) : null}
+                        {item.category === "organizations" &&
+                        item.headquartersLocationName ? (
+                          <Chip
+                            compact
+                            icon="office-building"
+                            style={styles.relationChip}
+                          >
+                            Sede: {item.headquartersLocationName}
+                          </Chip>
+                        ) : null}
+                        {(item.category === "theme" || item.conceptCategory) &&
+                        item.conceptCategory ? (
+                          <Chip
+                            compact
+                            icon="book-open-variant"
+                            style={styles.relationChip}
+                          >
+                            {item.conceptCategory}
+                          </Chip>
+                        ) : null}
+                      </View>
+                    )}
 
                     <Text
                       variant="bodySmall"
@@ -258,6 +307,21 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: 14,
     borderWidth: 1,
+  },
+  cardCover: {
+    height: 140,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 14,
+  },
+  relationBadgeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginVertical: 4,
+  },
+  relationChip: {
+    height: 26,
+    backgroundColor: "rgba(0, 0, 0, 0.05)",
   },
   cardContent: {
     paddingVertical: 12,
