@@ -60,13 +60,22 @@ export const ENCYCLOPEDIA_CATEGORIES: CategoryMeta[] = [
   },
   {
     key: "theme",
-    label: "Tema",
-    singular: "Tema / Conceito",
+    label: "Tema & Lore",
+    singular: "Tema / Lore / Conceito",
     icon: "palette-swatch",
-    description: "Conceito central, estética, atmosfera e tons narrativos",
+    description: "Conceito central, estética, atmosfera, lore e notas de história",
     color: "#704563",
   },
 ];
+
+export const CONCEPT_CATEGORIES = [
+  "Lore/História",
+  "Tema",
+  "Regra de Magia",
+  "Local",
+  "Organização",
+  "Conceito Geral",
+] as const;
 
 export const CHARACTER_ROLES: { role: CharacterRole; color: string; icon: string }[] = [
   { role: "Protagonista", color: "#2e7d32", icon: "star-circle" },

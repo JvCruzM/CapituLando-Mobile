@@ -17,6 +17,14 @@ export interface EncyclopediaItem {
   description: string;
   attributes: Record<string, string>;
   tags: string[];
+  image?: string | null;
+  raceId?: string | null;
+  raceName?: string | null;
+  parentLocationId?: string | null;
+  parentLocationName?: string | null;
+  headquartersLocationId?: string | null;
+  headquartersLocationName?: string | null;
+  conceptCategory?: string | null;
   createdAt: string;
   updatedAt: string;
 }
