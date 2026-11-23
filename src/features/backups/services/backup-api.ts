@@ -1,3 +1,5 @@
+import { clearWritingCache } from "../../writing/writing-store";
+import { useAuthStore } from "../../auth/session";
 import { accountRequest } from "../../../shared/api/account";
 
 export interface Backup {
@@ -30,16 +32,22 @@ export function parseBackup(text: string): Backup {
 
 export const exportAccountBackup = () =>
   accountRequest<Backup>({ url: "/api/backup" });
-export const restoreAccountBackup = (data: Backup) =>
-  accountRequest<void>({
+export async function restoreAccountBackup(data: Backup) {
+  const owner = useAuthStore.getState().session?.user.id;
+  await accountRequest<void>({
     url: "/api/backup",
     method: "POST",
     data,
     timeout: 60000,
   });
-export const clearAccountData = () =>
-  accountRequest<void>({
+  if (owner) await clearWritingCache(owner);
+}
+export async function clearAccountData() {
+  const owner = useAuthStore.getState().session?.user.id;
+  await accountRequest<void>({
     url: "/api/backup",
     method: "DELETE",
     timeout: 60000,
   });
+  if (owner) await clearWritingCache(owner);
+}

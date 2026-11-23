@@ -73,6 +73,7 @@ export function CreateEditModal({
   const [encTags, setEncTags] = useState("");
 
   // Character Form Fields
+  const [charNotes, setCharNotes] = useState("");
   const [charName, setCharName] = useState("");
   const [charAlias, setCharAlias] = useState("");
   const [charRole, setCharRole] = useState<CharacterRole>("Protagonista");
@@ -129,6 +130,7 @@ export function CreateEditModal({
       if (formMode.mode === "edit") {
         const c = formMode.item;
         setCharName(c.name);
+        setCharNotes(c.notes ?? "");
         setCharAlias(c.alias ?? "");
         setCharRole(c.role);
         setCharRace(c.race);
@@ -144,6 +146,7 @@ export function CreateEditModal({
         setCharQuote(c.quote ?? "");
       } else {
         setCharName("");
+        setCharNotes("");
         setCharAlias("");
         setCharRole("Protagonista");
         setCharRace("");
@@ -175,9 +178,9 @@ export function CreateEditModal({
         setTimeConsequences(t.consequences ?? "");
       } else {
         setTimeTitle("");
-        setTimeEra("Era Atual");
+        setTimeEra("");
         setTimeDateOrder("100");
-        setTimeDateDisplay("Ano 1 da Nova Era");
+        setTimeDateDisplay("");
         setTimeImportance("Maior");
         setTimeSummary("");
         setTimeDescription("");
@@ -235,14 +238,6 @@ export function CreateEditModal({
           setValidationError("Informe o nome do personagem.");
           return;
         }
-        if (!charRace.trim()) {
-          setValidationError("Informe a raça ou povo do personagem.");
-          return;
-        }
-        if (!charMotivation.trim()) {
-          setValidationError("Informe a motivação principal.");
-          return;
-        }
 
         const traits = charTraits
           .split(",")
@@ -252,17 +247,18 @@ export function CreateEditModal({
         await onSaveCharacter(
           {
             name: charName.trim(),
+            notes: charNotes,
             alias: charAlias.trim() || undefined,
             role: charRole,
             race: charRace.trim(),
             organization: charOrg.trim() || undefined,
             occupation: charOccupation.trim() || "Aventureiro / Cidadão",
             archetype: charArchetype.trim() || "Personagem",
-            appearance: charAppearance.trim() || "Não especificada",
-            personality: charPersonality.trim() || "Não especificada",
+            appearance: charAppearance.trim(),
+            personality: charPersonality.trim(),
             motivation: charMotivation.trim(),
             internalConflict: charConflict.trim() || "",
-            backstory: charBackstory.trim() || "Em desenvolvimento.",
+            backstory: charBackstory.trim(),
             traits,
             quote: charQuote.trim() || undefined,
           },
@@ -274,11 +270,14 @@ export function CreateEditModal({
           setValidationError("Informe o título do evento histórico.");
           return;
         }
-        if (!timeSummary.trim()) {
-          setValidationError("Informe o resumo do evento.");
+
+        if (
+          !Number.isInteger(Number(timeDateOrder)) ||
+          Math.abs(Number(timeDateOrder)) > 2147483647
+        ) {
+          setValidationError("Informe uma ordem numérica inteira válida.");
           return;
         }
-
         const charsInvolved = timeCharacters
           .split(",")
           .map((c) => c.trim())
@@ -287,12 +286,12 @@ export function CreateEditModal({
         await onSaveTimeline(
           {
             title: timeTitle.trim(),
-            era: timeEra.trim() || "Era Atual",
-            dateOrder: parseInt(timeDateOrder, 10) || 100,
-            dateDisplay: timeDateDisplay.trim() || "Data não registrada",
+            era: timeEra.trim(),
+            dateOrder: Number(timeDateOrder),
+            dateDisplay: timeDateDisplay.trim(),
             importance: timeImportance,
-            summary: timeSummary.trim(),
-            description: timeDescription.trim() || timeSummary.trim(),
+            summary: timeDescription.trim(),
+            description: timeDescription.trim(),
             location: timeLocation.trim() || undefined,
             charactersInvolved: charsInvolved,
             consequences: timeConsequences.trim() || undefined,
@@ -413,15 +412,6 @@ export function CreateEditModal({
                   style={styles.input}
                 />
 
-                <TextInput
-                  mode="outlined"
-                  label="Epíteto / Apelido"
-                  value={charAlias}
-                  onChangeText={setCharAlias}
-                  placeholder="Ex: A Tecelã de Sombras"
-                  style={styles.input}
-                />
-
                 <Text variant="labelLarge" style={styles.fieldLabel}>
                   Papel na Narrativa:
                 </Text>
@@ -446,7 +436,7 @@ export function CreateEditModal({
                 <View style={styles.attrRow}>
                   <TextInput
                     mode="outlined"
-                    label="Raça / Povo *"
+                    label="Raça / Povo"
                     value={charRace}
                     onChangeText={setCharRace}
                     placeholder="Ex: Sylfo Celestial"
@@ -462,42 +452,16 @@ export function CreateEditModal({
                   />
                 </View>
 
-                <View style={styles.attrRow}>
-                  <TextInput
-                    mode="outlined"
-                    label="Ocupação"
-                    value={charOccupation}
-                    onChangeText={setCharOccupation}
-                    placeholder="Ex: Cronista de Campo"
-                    style={styles.attrInput}
-                  />
-                  <TextInput
-                    mode="outlined"
-                    label="Arquétipo"
-                    value={charArchetype}
-                    onChangeText={setCharArchetype}
-                    placeholder="Ex: O Buscador Rebelde"
-                    style={styles.attrInput}
-                  />
-                </View>
+                <View style={styles.attrRow}></View>
 
                 <TextInput
                   mode="outlined"
-                  label="Motivação Principal *"
+                  label="Motivação Principal"
                   multiline
                   numberOfLines={2}
                   value={charMotivation}
                   onChangeText={setCharMotivation}
                   placeholder="O que move este personagem?"
-                  style={styles.input}
-                />
-
-                <TextInput
-                  mode="outlined"
-                  label="Conflito Interno / Medo"
-                  value={charConflict}
-                  onChangeText={setCharConflict}
-                  placeholder="Qual é a maior fraqueza ou dilema interior?"
                   style={styles.input}
                 />
 
@@ -529,6 +493,13 @@ export function CreateEditModal({
                   placeholder="Comportamento, manias, virtudes e vícios..."
                   style={styles.input}
                 />
+                <TextInput
+                  label="Notas"
+                  value={charNotes}
+                  onChangeText={setCharNotes}
+                  multiline
+                  mode="outlined"
+                />
 
                 <TextInput
                   mode="outlined"
@@ -536,15 +507,6 @@ export function CreateEditModal({
                   value={charQuote}
                   onChangeText={setCharQuote}
                   placeholder="Ex: Escrever é o único feitiço que não cobra memória..."
-                  style={styles.input}
-                />
-
-                <TextInput
-                  mode="outlined"
-                  label="Traços de Personalidade (vírgula)"
-                  value={charTraits}
-                  onChangeText={setCharTraits}
-                  placeholder="Ex: Sagaz, Melancólica, Leal"
                   style={styles.input}
                 />
               </View>
@@ -590,33 +552,7 @@ export function CreateEditModal({
                     placeholder="Ex: 380"
                     style={styles.attrInput}
                   />
-                  <View style={styles.attrInput}>
-                    <Text variant="labelSmall">Grau de Impacto:</Text>
-                    <SegmentedButtons
-                      value={timeImportance}
-                      onValueChange={(val) =>
-                        setTimeImportance(val as TimelineImportance)
-                      }
-                      buttons={[
-                        { value: "Menor", label: "Menor" },
-                        { value: "Maior", label: "Maior" },
-                        { value: "Crucial", label: "Crucial" },
-                      ]}
-                      density="small"
-                    />
-                  </View>
                 </View>
-
-                <TextInput
-                  mode="outlined"
-                  label="Resumo do Acontecimento *"
-                  multiline
-                  numberOfLines={2}
-                  value={timeSummary}
-                  onChangeText={setTimeSummary}
-                  placeholder="Resumo sintético para a linha do tempo..."
-                  style={styles.input}
-                />
 
                 <TextInput
                   mode="outlined"
@@ -644,17 +580,6 @@ export function CreateEditModal({
                   value={timeCharacters}
                   onChangeText={setTimeCharacters}
                   placeholder="Ex: Aria Vane, Lord Thorne"
-                  style={styles.input}
-                />
-
-                <TextInput
-                  mode="outlined"
-                  label="Consequências para o Mundo"
-                  multiline
-                  numberOfLines={2}
-                  value={timeConsequences}
-                  onChangeText={setTimeConsequences}
-                  placeholder="O que mudou após este evento?"
                   style={styles.input}
                 />
               </View>

@@ -1,7 +1,7 @@
-export type WritingItemKind = 'chapter' | 'draft';
+export type WritingItemKind = "chapter" | "draft";
 
-export type FontChoice = 'serif' | 'sans' | 'mono';
-export type SpacingChoice = 'normal' | 'relaxed' | 'loose';
+export type FontChoice = "serif" | "sans" | "mono";
+export type SpacingChoice = "normal" | "relaxed" | "loose";
 
 export interface WritingEntry {
   id: string;

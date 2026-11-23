@@ -35,6 +35,17 @@ export default function HomeScreen() {
       {session ? (
         <>
           <Button
+            mode="contained"
+            icon="view-dashboard"
+            onPress={() => router.push("/painel")}
+          >
+            Meu espaço de escrita
+          </Button>
+          <Button onPress={() => router.push("/historias")}>
+            Minhas histórias
+          </Button>
+          <Button onPress={() => router.push("/escrita")}>Escrever</Button>
+          <Button
             mode="contained-tonal"
             icon="book-open-page-variant"
             accessibilityLabel="Enciclopédia, Personagens & Cronologia"

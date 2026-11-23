@@ -61,6 +61,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
   const client = useQueryClient();
   const [selectedStory, setSelectedStory] = useState("");
   const [detail, setDetail] = useState<Target | null>(null);
+  const [creatingFree, setCreatingFree] = useState(false);
   const [form, setForm] = useState<FormMode>(null);
   const [deleting, setDeleting] = useState<DeleteTarget>(null);
   const [relationsCharacterId, setRelationsCharacterId] = useState<
@@ -125,7 +126,9 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
       } else if (target.kind === "character") {
         await charactersWorkspace.removeCharacter(target.id);
       } else if (target.kind === "timeline") {
-        await timelineWorkspace.removeEvent(target.id);
+        if (target.id.startsWith("chronology:"))
+          await timelineWorkspace.removeFreeNote(target.id.slice(11));
+        else await timelineWorkspace.removeEvent(target.id);
       }
     },
     async onSuccess() {
@@ -156,7 +159,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
       <Screen>
         <Text variant="headlineMedium">Enciclopédia</Text>
         <Text>
-          Você ainda não tem histórias. Crie uma história no web para começar a
+          Você ainda não tem histórias. Crie uma história para começar a
           construir seu universo.
         </Text>
         <Button onPress={() => void stories.refetch()}>
@@ -183,7 +186,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
     if (!target) return false;
     if (target.type === "encyclopedia") return canEditEntry(target.data);
     if (target.type === "character") return true;
-    if (target.type === "timeline") return !isLegacyTimelineEvent(target.data.id);
+    if (target.type === "timeline") return true;
     return false;
   };
 
@@ -230,7 +233,9 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         disabled={busy || snapshot.isFetching}
         loading={snapshot.isFetching}
         onPress={() => {
-          void client.invalidateQueries({ queryKey: storiesKey(ownerId) });
+          void client.invalidateQueries({
+            predicate: (q) => q.queryKey.includes(ownerId),
+          });
           void client.invalidateQueries({
             queryKey: universeKey(ownerId, storyId),
           });
@@ -238,6 +243,13 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
       >
         Atualizar dados
       </Button>
+      {charactersWorkspace.error || timelineWorkspace.error ? (
+        <HelperText type="error">
+          {accountErrorMessage(
+            charactersWorkspace.error || timelineWorkspace.error,
+          )}
+        </HelperText>
+      ) : null}
       {snapshot.error ? (
         <HelperText type="error">
           {accountErrorMessage(snapshot.error)}
@@ -312,12 +324,24 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
               mode: "create",
               targetType: "timeline",
             });
+            setCreatingFree(false);
           }}
         >
           Novo Evento / Cronologia
         </Button>
       ) : null}
 
+      {activeTab === "timeline" ? (
+        <Button
+          disabled={busy}
+          onPress={() => {
+            setCreatingFree(true);
+            setForm({ mode: "create", targetType: "timeline" });
+          }}
+        >
+          Novo marco livre
+        </Button>
+      ) : null}
       {activeTab === "encyclopedia" ? (
         <EncyclopediaView
           onSelectItem={(data) => setDetail({ type: "encyclopedia", data })}
@@ -429,45 +453,68 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
             ? charactersWorkspace.characters.find((c) => c.id === id)
             : undefined;
 
-          const saved = await charactersWorkspace.saveCharacter({
+          if (charactersWorkspace.error) throw charactersWorkspace.error;
+          if (
+            item.race.trim() &&
+            item.race !== "Sem raça vinculada" &&
+            !matchedRace
+          )
+            throw new Error("Selecione uma raça existente na história.");
+          const matchedOrg = charactersWorkspace.organizations.find(
+            (o) =>
+              o.name.toLowerCase() === item.organization?.trim().toLowerCase(),
+          );
+          const originalOrg = snapshot.data?.characters.find(
+            (c) => c.id === id,
+          )?.organization;
+          if (
+            item.organization?.trim() &&
+            item.organization !== originalOrg &&
+            !matchedOrg
+          )
+            throw new Error("Selecione uma organização existente na história.");
+          await charactersWorkspace.saveCharacter({
             characterId: id,
             payload: {
+              ...existingRecord,
+              organizationId: matchedOrg?.id,
               name: item.name,
-              raceId: matchedRace?.id ?? existingRecord?.raceId ?? null,
+              raceId: item.race.trim() ? (matchedRace?.id ?? null) : null,
               role: item.role,
               appearance: item.appearance || null,
               personality: item.personality || null,
               motivation: item.motivation || null,
               background: item.backstory || null,
               motto: item.quote || null,
-              notes: [item.occupation, item.archetype, item.internalConflict]
-                .filter(Boolean)
-                .join(" | ") || null,
+              notes: item.notes?.trim() || null,
             },
           });
-
-          if (item.organization?.trim()) {
-            const matchedOrg = charactersWorkspace.organizations.find(
-              (o) =>
-                o.name.toLowerCase() === item.organization!.trim().toLowerCase(),
-            );
-            const alreadyLinked =
-              matchedOrg &&
-              charactersWorkspace.characterOrganizations.some(
-                (link) =>
-                  link.characterId === saved.id &&
-                  link.organizationId === matchedOrg.id,
-              );
-            if (matchedOrg && !alreadyLinked) {
-              await charactersWorkspace.addOrganizationLink({
-                characterId: saved.id,
-                organizationId: matchedOrg.id,
-                isActive: true,
-              });
-            }
-          }
         }}
         onSaveTimeline={async (item, id) => {
+          if (timelineWorkspace.error) throw timelineWorkspace.error;
+          if ((id && isLegacyTimelineEvent(id)) || (!id && creatingFree)) {
+            await timelineWorkspace.saveFreeNote({
+              entryId: id?.slice(11),
+              payload: {
+                title: item.title,
+                eraLabel: [
+                  !["Cronologia livre", "Cronologia da história"].includes(
+                    item.era,
+                  )
+                    ? item.era
+                    : "",
+                  item.dateDisplay,
+                ]
+                  .filter(Boolean)
+                  .join(" • "),
+                location: item.location,
+                content: item.description || item.summary,
+                order: item.dateOrder,
+                characters: item.charactersInvolved.join(", "),
+              },
+            });
+            return;
+          }
           const matchedLocation = item.location
             ? timelineWorkspace.locations.find(
                 (loc) =>
@@ -476,6 +523,8 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
               )
             : undefined;
 
+          if (item.location?.trim() && !matchedLocation)
+            throw new Error("Selecione um local existente na história.");
           const involvedNames = new Set(
             item.charactersInvolved.map((name) => name.trim().toLowerCase()),
           );
@@ -483,17 +532,34 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
             .filter((char) => involvedNames.has(char.name.toLowerCase()))
             .map((char) => char.id);
 
+          if (
+            [...involvedNames].some(
+              (name) =>
+                !charactersWorkspace.characters.some(
+                  (c) => c.name.toLowerCase() === name,
+                ),
+            )
+          )
+            throw new Error("Selecione personagens existentes na história.");
+          const existingEvent = timelineWorkspace.events.find(
+            (e) => e.id === id,
+          );
           await timelineWorkspace.saveEvent({
             eventId: id,
             payload: {
+              ...existingEvent,
               title: item.title,
               description: item.description || item.summary || null,
               chronologicalDate:
-                [item.era, item.dateDisplay].filter(Boolean).join(" • ") ||
-                null,
+                [
+                  item.era === "Cronologia da história" ? "" : item.era,
+                  item.dateDisplay,
+                ]
+                  .filter(Boolean)
+                  .join(" • ") || null,
               sequenceOrder: item.dateOrder,
               locationId: matchedLocation?.id ?? null,
-              chapterId: null,
+              chapterId: existingEvent?.chapterId ?? null,
             },
             characterIds: matchedCharacterIds,
           });
@@ -511,7 +577,9 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         onDismiss={() => setRelationsCharacterId(null)}
         onAddOrganization={charactersWorkspace.addOrganizationLink}
         onRemoveOrganization={charactersWorkspace.removeOrganizationLink}
-        onSaveRelationship={charactersWorkspace.saveRelationship}
+        onSaveRelationship={(payload) =>
+          charactersWorkspace.saveRelationship({ payload })
+        }
         onRemoveRelationship={charactersWorkspace.removeRelationship}
       />
 

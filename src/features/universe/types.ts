@@ -29,6 +29,7 @@ export type CharacterRole =
   | "Secundário";
 
 export interface CharacterItem {
+  notes?: string;
   id: string;
   name: string;
   alias?: string;
@@ -75,7 +76,7 @@ export interface UniverseStats {
   byCategory: Record<EncyclopediaCategory, number>;
 }
 
-export type WritingItemKind = 'chapter' | 'draft';
+export type WritingItemKind = "chapter" | "draft";
 
 export interface WritingEntry {
   id: string;

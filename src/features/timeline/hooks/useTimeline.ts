@@ -21,45 +21,47 @@ import {
 } from "../services/timelineNoteService";
 import { universeKey } from "../../universe/services/universe-api";
 
-export const eventsQueryKey = (storyId: string) =>
-  ["story-events", storyId] as const;
+export const eventsQueryKey = (ownerId: string, storyId: string) =>
+  ["story-events", ownerId, storyId] as const;
 
 export function useTimelineWorkspace(ownerId: string, storyId: string) {
   const queryClient = useQueryClient();
   const enabled = Boolean(ownerId && storyId);
 
   const eventsQuery = useQuery({
-    queryKey: eventsQueryKey(storyId),
+    queryKey: eventsQueryKey(ownerId, storyId),
     queryFn: () => listEvents(storyId),
     enabled,
   });
 
   const locationsQuery = useQuery({
-    queryKey: ["story-locations", storyId],
+    queryKey: ["story-locations", ownerId, storyId],
     queryFn: () => listStoryLocations(storyId),
     enabled,
   });
 
   const eventCharactersQuery = useQuery({
-    queryKey: ["story-event-characters", storyId],
+    queryKey: ["story-event-characters", ownerId, storyId],
     queryFn: () => listEventCharacters(storyId),
     enabled,
   });
 
   const freeChronologyQuery = useQuery({
-    queryKey: ["story-free-chronology", storyId],
+    queryKey: ["story-free-chronology", ownerId, storyId],
     queryFn: () => listFreeChronology(storyId),
     enabled,
   });
 
   const invalidateAll = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: eventsQueryKey(storyId) }),
       queryClient.invalidateQueries({
-        queryKey: ["story-event-characters", storyId],
+        queryKey: eventsQueryKey(ownerId, storyId),
       }),
       queryClient.invalidateQueries({
-        queryKey: ["story-free-chronology", storyId],
+        queryKey: ["story-event-characters", ownerId, storyId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["story-free-chronology", ownerId, storyId],
       }),
       queryClient.invalidateQueries({
         queryKey: universeKey(ownerId, storyId),
@@ -77,34 +79,10 @@ export function useTimelineWorkspace(ownerId: string, storyId: string) {
       payload: SaveEventPayload;
       characterIds?: string[];
     }) => {
+      const data = { ...payload, characterIds };
       const saved = eventId
-        ? await updateEvent(storyId, eventId, payload)
-        : await createEvent(storyId, payload);
-
-      if (characterIds) {
-        const existingLinks = (eventCharactersQuery.data ?? []).filter(
-          (link) => link.eventId === saved.id,
-        );
-        const currentCharIds = new Set(
-          existingLinks.map((link) => link.characterId),
-        );
-        const desiredCharIds = new Set(characterIds);
-
-        for (const link of existingLinks) {
-          if (!desiredCharIds.has(link.characterId)) {
-            await removeEventCharacter(storyId, link.id);
-          }
-        }
-
-        for (const characterId of desiredCharIds) {
-          if (!currentCharIds.has(characterId)) {
-            await addEventCharacter(storyId, {
-              eventId: saved.id,
-              characterId,
-            });
-          }
-        }
-      }
+        ? await updateEvent(storyId, eventId, data)
+        : await createEvent(storyId, data);
 
       return saved;
     },
@@ -151,6 +129,11 @@ export function useTimelineWorkspace(ownerId: string, storyId: string) {
     locations: locationsQuery.data ?? [],
     eventCharacters: eventCharactersQuery.data ?? [],
     freeChronology: freeChronologyQuery.data ?? [],
+    error:
+      eventsQuery.error ??
+      locationsQuery.error ??
+      eventCharactersQuery.error ??
+      freeChronologyQuery.error,
     isLoading:
       eventsQuery.isLoading ||
       locationsQuery.isLoading ||

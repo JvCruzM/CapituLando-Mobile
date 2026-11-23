@@ -1,11 +1,19 @@
-import {
-  createEvent,
-  deleteEvent,
-  EventRecord,
-  listEvents,
-  updateEvent,
-} from "../../events/services/eventService";
-
+import { useAuthStore } from "../../auth/session";
+import { accountRequest } from "../../../shared/api/account";
+interface Entry {
+  id: string;
+  projectId: string;
+  title: string;
+  yearOrDate: string;
+  description?: string;
+  characters?: string;
+  order?: number;
+  location?: string;
+}
+interface Document {
+  revision: number;
+  value: Entry[];
+}
 export interface FreeChronologyEntry {
   id: string;
   storyId: string;
@@ -13,81 +21,90 @@ export interface FreeChronologyEntry {
   title: string;
   content: string;
   order: number;
-  locationId?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
+  characters?: string;
 }
-
 export interface SaveFreeChronologyPayload {
-  eraLabel?: string | null;
   title: string;
+  eraLabel?: string | null;
   content?: string | null;
   order?: number | null;
+  characters?: string;
   locationId?: string | null;
+  location?: string;
 }
-
-function toFreeChronologyEntry(event: EventRecord, index: number): FreeChronologyEntry {
-  return {
-    id: event.id,
-    storyId: event.storyId,
-    eraLabel: event.chronologicalDate ?? "",
-    title: event.title,
-    content: event.description ?? "",
-    order: event.sequenceOrder ?? index + 1,
-    locationId: event.locationId ?? null,
-    createdAt: event.createdAt,
-    updatedAt: event.updatedAt,
+const read = () => accountRequest<Document>({ url: "/api/workspace/events" });
+const toEntry = (e: Entry, index: number): FreeChronologyEntry => ({
+  id: e.id,
+  storyId: e.projectId,
+  title: e.title,
+  eraLabel: e.yearOrDate,
+  content: e.description ?? "",
+  order: e.order ?? index,
+  characters: e.characters,
+});
+export async function listFreeChronology(storyId: string) {
+  return (await read()).value
+    .filter((e) => e.projectId === storyId)
+    .map(toEntry);
+}
+async function save(
+  storyId: string,
+  payload: SaveFreeChronologyPayload,
+  id?: string,
+) {
+  const sessionVersion = useAuthStore.getState().sessionVersion;
+  const doc = await read();
+  if (sessionVersion !== useAuthStore.getState().sessionVersion)
+    throw new Error("A sessão mudou. Abra a cronologia novamente.");
+  const existing = id
+    ? doc.value.find((e) => e.id === id && e.projectId === storyId)
+    : undefined;
+  if (id && !existing)
+    throw new Error("Marco não encontrado. Atualize a cronologia.");
+  const entry: Entry = {
+    ...existing,
+    id:
+      id ?? "mobile_" + Date.now() + "_" + Math.random().toString(36).slice(2),
+    projectId: storyId,
+    title: payload.title,
+    yearOrDate: payload.eraLabel || "Data não registrada",
+    description: payload.content ?? "",
+    location: payload.location ?? existing?.location ?? "",
+    order: payload.order ?? 0,
+    characters: payload.characters ?? existing?.characters ?? "",
   };
+  await accountRequest({
+    url: "/api/workspace/events",
+    method: "PUT",
+    data: {
+      revision: doc.revision,
+      value: id
+        ? doc.value.map((e) => (e.id === id ? entry : e))
+        : [...doc.value, entry],
+    },
+  });
+  return toEntry(entry, 0);
 }
-
-export async function listFreeChronology(
-  storyId: string,
-): Promise<FreeChronologyEntry[]> {
-  const events = await listEvents(storyId);
-  return events
-    .filter((event) => !event.chapterId)
-    .sort((a, b) => {
-      const orderA = a.sequenceOrder ?? Number.MAX_SAFE_INTEGER;
-      const orderB = b.sequenceOrder ?? Number.MAX_SAFE_INTEGER;
-      return orderA - orderB;
-    })
-    .map(toFreeChronologyEntry);
-}
-
-export async function createFreeChronologyEntry(
+export const createFreeChronologyEntry = (
   storyId: string,
   payload: SaveFreeChronologyPayload,
-): Promise<FreeChronologyEntry> {
-  const created = await createEvent(storyId, {
-    title: payload.title,
-    description: payload.content ?? null,
-    chronologicalDate: payload.eraLabel ?? null,
-    sequenceOrder: payload.order ?? null,
-    locationId: payload.locationId ?? null,
-    chapterId: null,
-  });
-  return toFreeChronologyEntry(created, 0);
-}
-
-export async function updateFreeChronologyEntry(
+) => save(storyId, payload);
+export const updateFreeChronologyEntry = (
   storyId: string,
-  entryId: string,
+  id: string,
   payload: SaveFreeChronologyPayload,
-): Promise<FreeChronologyEntry> {
-  const updated = await updateEvent(storyId, entryId, {
-    title: payload.title,
-    description: payload.content ?? null,
-    chronologicalDate: payload.eraLabel ?? null,
-    sequenceOrder: payload.order ?? null,
-    locationId: payload.locationId ?? null,
-    chapterId: null,
+) => save(storyId, payload, id);
+export async function deleteFreeChronologyEntry(storyId: string, id: string) {
+  const version = useAuthStore.getState().sessionVersion;
+  const doc = await read();
+  if (version !== useAuthStore.getState().sessionVersion)
+    throw new Error("A sessão mudou.");
+  await accountRequest({
+    url: "/api/workspace/events",
+    method: "PUT",
+    data: {
+      revision: doc.revision,
+      value: doc.value.filter((e) => !(e.id === id && e.projectId === storyId)),
+    },
   });
-  return toFreeChronologyEntry(updated, 0);
-}
-
-export async function deleteFreeChronologyEntry(
-  storyId: string,
-  entryId: string,
-): Promise<void> {
-  await deleteEvent(storyId, entryId);
 }

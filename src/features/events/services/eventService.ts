@@ -20,6 +20,7 @@ export interface EventRecord {
 }
 
 export interface SaveEventPayload {
+  characterIds?: string[];
   title: string;
   description?: string | null;
   chronologicalDate?: string | null;

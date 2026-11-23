@@ -37,6 +37,7 @@ export interface CharacterRecord {
 }
 
 export interface SaveCharacterPayload {
+  organizationId?: string | null;
   name: string;
   raceId?: string | null;
   role?: string | null;
@@ -63,7 +64,9 @@ export interface SaveCharacterPayload {
   imagePosition?: string | null;
 }
 
-export async function listCharacters(storyId: string): Promise<CharacterRecord[]> {
+export async function listCharacters(
+  storyId: string,
+): Promise<CharacterRecord[]> {
   return accountRequest<CharacterRecord[]>({
     url: `/api/stories/${storyId}/characters`,
     method: "GET",

@@ -1,22 +1,77 @@
-import { StyleSheet, View } from 'react-native';
-import { Button, Card, ProgressBar, Text, useTheme } from 'react-native-paper';
-import { router } from 'expo-router';
-import { Screen } from '../../../../src/shared/components/Screen';
-
+import { View } from "react-native";
+import { Button, Card, ProgressBar, Text } from "react-native-paper";
+import { router } from "expo-router";
+import { Screen } from "../../../shared/components/Screen";
+import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
+import { useStories } from "../../stories/services/stories-api";
+import {
+  useWorkspaceSection,
+  type WorkspaceGoal,
+  type WorkspaceIdea,
+} from "../../workspace/services/workspace-api";
 export default function HomeScreen() {
-  const theme = useTheme();
-  return <Screen>
-    <Text variant="headlineMedium">Meu espaço de escrita</Text>
-    <Text variant="bodyMedium">Acompanhe suas histórias, ideias e objetivos.</Text>
-    <View style={styles.grid}>
-      <Card style={styles.card}><Card.Content><Text variant="labelLarge">Histórias</Text><Text variant="headlineLarge">3</Text><Text variant="bodySmall">projetos em andamento</Text></Card.Content></Card>
-      <Card style={styles.card}><Card.Content><Text variant="labelLarge">Ideias</Text><Text variant="headlineLarge">8</Text><Text variant="bodySmall">ideias registradas</Text></Card.Content></Card>
-      <Card style={styles.card}><Card.Content><Text variant="labelLarge">Metas</Text><Text variant="headlineLarge">2/5</Text><Text variant="bodySmall">concluídas</Text></Card.Content></Card>
-    </View>
-    <Card><Card.Content><Text variant="titleMedium">Progresso geral</Text><ProgressBar progress={0.4} color={theme.colors.primary} style={styles.progress}/><Text variant="bodySmall">40% das metas concluídas (dados demonstrativos)</Text></Card.Content></Card>
-    <Button mode="contained" onPress={() => router.push('/historias')}>Minhas histórias</Button>
-    <Button mode="outlined" onPress={() => router.push('/ideias')}>Minhas ideias</Button>
-    <Button mode="outlined" onPress={() => router.push('/metas')}>Minhas metas</Button>
-  </Screen>;
+  const stories = useStories(),
+    goals = useWorkspaceSection<WorkspaceGoal>("goals"),
+    ideas = useWorkspaceSection<WorkspaceIdea>("ideas");
+  if (!stories.data || !goals.data || !ideas.data)
+    return (
+      <AccountQueryStatus
+        error={stories.error ?? goals.error ?? ideas.error}
+        fetchStatus={
+          [stories.fetchStatus, goals.fetchStatus, ideas.fetchStatus].includes(
+            "fetching",
+          )
+            ? "fetching"
+            : "idle"
+        }
+        retry={() => {
+          void stories.refetch();
+          void goals.refetch();
+          void ideas.refetch();
+        }}
+      />
+    );
+  const completed = goals.items.filter((g) => g.completed).length,
+    progress = goals.items.length ? completed / goals.items.length : 0;
+  return (
+    <Screen>
+      <Text variant="headlineMedium">Meu espaço de escrita</Text>
+      <Text>Histórias, ideias e metas da sua conta.</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        {[
+          ["Histórias", stories.data.length],
+          ["Ideias", ideas.items.length],
+          ["Metas concluídas", `${completed}/${goals.items.length}`],
+        ].map(([label, value]) => (
+          <Card key={label}>
+            <Card.Content>
+              <Text>{label}</Text>
+              <Text variant="headlineLarge">{value}</Text>
+            </Card.Content>
+          </Card>
+        ))}
+      </View>
+      <Text>
+        {stories.data.reduce((total, s) => total + s.wordCount, 0)} palavras
+        escritas
+      </Text>
+      <ProgressBar progress={progress} />
+      <Text>{Math.round(progress * 100)}% das metas concluídas</Text>
+      <Button mode="contained" onPress={() => router.push("/historias")}>
+        Minhas histórias
+      </Button>
+      <Button onPress={() => router.push("/escrita")}>Espaço de escrita</Button>
+      <Button onPress={() => router.push("/ideias")}>Minhas ideias</Button>
+      <Button onPress={() => router.push("/metas")}>Minhas metas</Button>
+      <Button
+        onPress={() => {
+          void stories.refetch();
+          void goals.refetch();
+          void ideas.refetch();
+        }}
+      >
+        Atualizar painel
+      </Button>
+    </Screen>
+  );
 }
-const styles = StyleSheet.create({ grid:{flexDirection:'row',flexWrap:'wrap',gap:10}, card:{flex:1,minWidth:130}, progress:{height:9,borderRadius:8,marginVertical:12} });

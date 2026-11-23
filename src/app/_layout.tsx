@@ -106,6 +106,24 @@ function AppLayout() {
           />
           <Stack.Protected guard={expiresAt !== undefined}>
             <Stack.Screen
+              name="escrita"
+              options={{ title: "Espaço de escrita" }}
+            />
+            <Stack.Screen
+              name="historias"
+              options={{ title: "Minhas histórias" }}
+            />
+            <Stack.Screen name="ideias" options={{ title: "Minhas ideias" }} />
+            <Stack.Screen name="metas" options={{ title: "Minhas metas" }} />
+            <Stack.Screen
+              name="painel"
+              options={{ title: "Painel de progresso" }}
+            />
+            <Stack.Screen
+              name="capitulos/[id]"
+              options={{ title: "Capítulos" }}
+            />
+            <Stack.Screen
               name="enciclopedia"
               options={{ title: "Enciclopédia & Cronologia" }}
             />

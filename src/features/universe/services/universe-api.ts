@@ -22,10 +22,20 @@ const stamp = (row: Row) => ({
   updatedAt: text(row.updated_at),
 });
 
-export const editableCategories = ["races", "creatures", "items"] as const;
+export const editableCategories = [
+  "races",
+  "creatures",
+  "items",
+  "locations",
+  "organizations",
+  "world-rules",
+] as const;
 export const categoryFields: Partial<
   Record<EncyclopediaCategory, Record<string, string>>
 > = {
+  locations: { type: "Tipo", climate: "Clima", region: "Região" },
+  organizations: { type: "Tipo" },
+  "world-rules": { category: "Categoria" },
   races: { appearance: "Aparência", culture: "Cultura", habitat: "Habitat" },
   creatures: {
     appearance: "Aparência",
@@ -71,7 +81,7 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
     (Array.isArray(snapshot[key]) ? snapshot[key] : []) as Row[];
   const encyclopediaItems: EncyclopediaItem[] = [];
   for (const category of editableCategories) {
-    for (const row of rows(category)) {
+    for (const row of rows(category.replaceAll("-", "_"))) {
       const attributes = Object.fromEntries(
         Object.entries(categoryFields[category]!).map(([field, label]) => [
           label,
@@ -81,22 +91,6 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
       encyclopediaItems.push(entry(row, category, attributes, true));
     }
   }
-  for (const row of rows("locations"))
-    encyclopediaItems.push(
-      entry(row, "locations", {
-        Tipo: text(row.type),
-        Clima: text(row.climate),
-        Região: text(row.region),
-      }),
-    );
-  for (const row of rows("organizations"))
-    encyclopediaItems.push(
-      entry(row, "organizations", { Tipo: text(row.type) }),
-    );
-  for (const row of rows("world_rules"))
-    encyclopediaItems.push(
-      entry(row, "world-rules", { Categoria: text(row.category) }),
-    );
   for (const row of rows("concepts")) {
     const category =
       row.category === "Local"
@@ -138,6 +132,7 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
     motivation: text(row.motivation),
     internalConflict: "",
     backstory: text(row.background),
+    notes: text(row.notes),
     traits: [],
     quote: text(row.motto),
     ...stamp(row),
@@ -149,9 +144,14 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
   const timelineEvents: TimelineEventItem[] = rows("events").map((row) => ({
     id: text(row.id),
     title: text(row.title),
-    era: "Cronologia da história",
+    era: text(row.chronological_date).includes(" • ")
+      ? text(row.chronological_date).split(" • ")[0]!
+      : "Cronologia da história",
     dateOrder: typeof row.sequence_order === "number" ? row.sequence_order : 0,
-    dateDisplay: text(row.chronological_date),
+    dateDisplay: text(row.chronological_date)
+      .split(" • ")
+      .slice(text(row.chronological_date).includes(" • ") ? 1 : 0)
+      .join(" • "),
     importance: "Maior",
     summary: text(row.description),
     description: text(row.description),
@@ -166,9 +166,15 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
     timelineEvents.push({
       id: `chronology:${row.id}`,
       title: text(row.title),
-      era: "Cronologia livre",
-      dateOrder: 0,
-      dateDisplay: text(row.yearOrDate),
+      era: text(row.yearOrDate).includes(" • ")
+        ? text(row.yearOrDate).split(" • ")[0]!
+        : "Cronologia livre",
+      dateOrder: typeof row.order === "number" ? row.order : 0,
+      dateDisplay: text(row.yearOrDate)
+        .split(" • ")
+        .slice(text(row.yearOrDate).includes(" • ") ? 1 : 0)
+        .join(" • "),
+      location: text(row.location) || undefined,
       importance: "Maior",
       summary: text(row.description),
       description: text(row.description),
@@ -205,10 +211,21 @@ export async function saveEncyclopedia(
       (!canEditEntry(original) || original.category !== item.category))
   )
     throw new Error("A edição desta categoria ainda não está disponível.");
-  const data: Row = { name: item.name, description: item.description };
+  const data: Row = {
+    [item.category === "world-rules" ? "title" : "name"]: item.name,
+    description: item.description,
+  };
   for (const [field, label] of Object.entries(fields))
     data[field] = item.attributes[label] ?? null;
   const source = original?.source ?? {};
+  if (item.category === "locations") {
+    data.parentLocationId = source.parent_location_id ?? null;
+    data.locationImage = source.location_image ?? null;
+  }
+  if (item.category === "organizations") {
+    data.headquartersLocationId = source.headquarters_location_id ?? null;
+    data.organizationImage = source.organization_image ?? null;
+  }
   if (item.category === "races") data.raceImage = source.race_image ?? null;
   if (item.category === "creatures") {
     data.creatureImage = source.creature_image ?? null;
