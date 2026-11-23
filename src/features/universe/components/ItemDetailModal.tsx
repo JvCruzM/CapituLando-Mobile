@@ -106,6 +106,14 @@ function EncyclopediaDetail({ item }: { item: EncyclopediaItem }) {
 
   return (
     <View style={styles.detailContainer}>
+      {item.image ? (
+        <Image
+          source={{ uri: item.image }}
+          resizeMode="cover"
+          style={styles.coverImage}
+        />
+      ) : null}
+
       <View style={styles.headerRow}>
         <Surface
           style={[
@@ -130,12 +138,43 @@ function EncyclopediaDetail({ item }: { item: EncyclopediaItem }) {
         </View>
       </View>
 
-      <Chip
-        icon="tag"
-        style={[styles.categoryChip, { alignSelf: "flex-start" }]}
-      >
-        {meta?.singular ?? item.category}
-      </Chip>
+      <View style={styles.chipsWrap}>
+        <Chip
+          icon="tag"
+          style={[
+            styles.categoryChip,
+            { backgroundColor: (meta?.color ?? "#704563") + "22" },
+          ]}
+        >
+          {meta?.singular ?? item.category}
+        </Chip>
+        {item.category === "creatures" && (
+          <Chip icon="dna" style={{ backgroundColor: "#8e44ad22" }}>
+            Raça: {item.raceName || "Sem raça vinculada"}
+          </Chip>
+        )}
+        {item.category === "locations" && (
+          <Chip
+            icon="map-marker-radius"
+            style={{ backgroundColor: "#2980b922" }}
+          >
+            Local Pai: {item.parentLocationName || "Local Principal"}
+          </Chip>
+        )}
+        {item.category === "organizations" && (
+          <Chip icon="office-building" style={{ backgroundColor: "#16a08522" }}>
+            Sede: {item.headquartersLocationName || "Sem sede definida"}
+          </Chip>
+        )}
+        {(item.category === "theme" || item.conceptCategory) && (
+          <Chip
+            icon="book-open-variant"
+            style={{ backgroundColor: "#70456322" }}
+          >
+            {item.conceptCategory || "Lore/História"}
+          </Chip>
+        )}
+      </View>
 
       <Divider style={styles.divider} />
 
@@ -146,26 +185,53 @@ function EncyclopediaDetail({ item }: { item: EncyclopediaItem }) {
         {item.description}
       </Text>
 
-      {item.attributes && Object.keys(item.attributes).length > 0 && (
-        <>
-          <Divider style={styles.divider} />
-          <Text variant="titleSmall" style={styles.sectionHeader}>
-            Atributos e Características
-          </Text>
-          <View style={styles.attributesList}>
-            {Object.entries(item.attributes).map(([key, val]) => (
-              <View key={key} style={styles.attributeRow}>
-                <Text variant="labelMedium" style={styles.attrKey}>
-                  {key}:
-                </Text>
-                <Text variant="bodySmall" style={styles.attrVal}>
-                  {val}
-                </Text>
-              </View>
-            ))}
+      <Divider style={styles.divider} />
+      <Text variant="titleSmall" style={styles.sectionHeader}>
+        Atributos e Características
+      </Text>
+      <View style={styles.attributesList}>
+        {item.category === "creatures" && (
+          <View style={styles.attributeRow}>
+            <Text variant="labelMedium" style={styles.attrKey}>
+              Raça da Criatura:
+            </Text>
+            <Text variant="bodySmall" style={styles.attrVal}>
+              {item.raceName || "Sem raça vinculada"}
+            </Text>
           </View>
-        </>
-      )}
+        )}
+        {item.category === "locations" && (
+          <View style={styles.attributeRow}>
+            <Text variant="labelMedium" style={styles.attrKey}>
+              Local Pai:
+            </Text>
+            <Text variant="bodySmall" style={styles.attrVal}>
+              {item.parentLocationName || "Nenhum (Local Principal)"}
+            </Text>
+          </View>
+        )}
+        {item.category === "organizations" && (
+          <View style={styles.attributeRow}>
+            <Text variant="labelMedium" style={styles.attrKey}>
+              Sede / Quartel-General:
+            </Text>
+            <Text variant="bodySmall" style={styles.attrVal}>
+              {item.headquartersLocationName || "Sem sede definida"}
+            </Text>
+          </View>
+        )}
+        {item.attributes &&
+          Object.entries(item.attributes).map(([key, val]) => (
+            <View key={key} style={styles.attributeRow}>
+              <Text variant="labelMedium" style={styles.attrKey}>
+                {key}:
+              </Text>
+              <Text variant="bodySmall" style={styles.attrVal}>
+                {val}
+              </Text>
+            </View>
+          ))}
+      </View>
 
       {item.tags && item.tags.length > 0 && (
         <>
