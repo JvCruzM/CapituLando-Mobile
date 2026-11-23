@@ -207,3 +207,103 @@ test("recuperação alterada no web sem sessionId também exige resolver o confl
     null,
   );
 });
+
+const bridge = load("src/features/writing/components/editor-bridge.ts");
+function nativeEditor() {
+  let html = "",
+    caret = 0,
+    replacements = 0,
+    editableWrites = 0,
+    editable = true;
+  const listeners = {},
+    messages = [];
+  const editor = {
+    style: {},
+    get innerHTML() {
+      return html;
+    },
+    set innerHTML(value) {
+      html = value;
+      caret = 0;
+      replacements++;
+    },
+    get isContentEditable() {
+      return editable;
+    },
+    set contentEditable(value) {
+      editable = value === "true";
+      editableWrites++;
+    },
+    addEventListener: (name, fn) => {
+      listeners[name] = fn;
+    },
+  };
+  const window = {
+    ReactNativeWebView: {
+      postMessage: (value) => messages.push(JSON.parse(value)),
+    },
+  };
+  new Function("window", "document", bridge.editorBridge)(window, {
+    getElementById: () => editor,
+    body: { style: {} },
+  });
+  return {
+    set: window.setEditor,
+    type(value) {
+      html = value;
+      caret = value.length;
+      listeners.input();
+      return messages.at(-1);
+    },
+    get html() {
+      return html;
+    },
+    get caret() {
+      return caret;
+    },
+    get replacements() {
+      return replacements;
+    },
+    get editableWrites() {
+      return editableWrites;
+    },
+  };
+}
+test("espaços emitidos pelo editor não são convertidos e reinseridos no campo", () => {
+  const dom = nativeEditor(),
+    state = { applied: null, echoes: [] };
+  dom.set(editor.asHtml(bridge.nextEditorContent(state, "Olá")), null, true, 0);
+  const message = dom.type("Olá&nbsp;");
+  state.echoes.push(message.html);
+  assert.equal(bridge.nextEditorContent(state, message.html), null);
+  dom.set(null, { fontSize: "18px" }, true, message.revision);
+  assert.equal(dom.html, "Olá&nbsp;");
+  assert.equal(dom.caret, "Olá&nbsp;".length);
+  assert.equal(dom.replacements, 1);
+  assert.equal(dom.editableWrites, 0);
+});
+test("eco atrasado de uma tecla anterior não substitui texto digitado depois", () => {
+  const state = { applied: "", echoes: ["Um", "Um&nbsp;", "Um&nbsp;texto"] };
+  assert.equal(bridge.nextEditorContent(state, "Um"), null);
+  assert.equal(bridge.nextEditorContent(state, "Um&nbsp;texto"), null);
+  assert.deepEqual(state.echoes, []);
+  assert.equal(
+    bridge.nextEditorContent(state, "<p>Outro capítulo</p>"),
+    "<p>Outro capítulo</p>",
+  );
+});
+test("comandos antigos da ponte não reposicionam o cursor após nova digitação", () => {
+  const dom = nativeEditor();
+  dom.set("Inicial", null, true, 0);
+  dom.type("Inicial novo");
+  const caret = dom.caret;
+  dom.set("Inicial antigo", null, true, 0);
+  assert.equal(dom.html, "Inicial novo");
+  assert.equal(dom.caret, caret);
+  dom.set("<p>Outro capítulo</p>", null, true, 1);
+  assert.equal(dom.html, "<p>Outro capítulo</p>");
+});
+test("espaços HTML existentes são preservados ao abrir textos simples", () => {
+  assert.equal(editor.asHtml("Olá&nbsp;mundo"), "Olá&nbsp;mundo");
+  assert.equal(editor.asHtml("A & B"), "A &amp; B");
+});

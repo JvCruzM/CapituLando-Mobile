@@ -12,7 +12,7 @@ export interface EditorProps {
 export function asHtml(value: string) {
   if (/<\/?[a-z][^>]*>/i.test(value)) return value;
   return value
-    .replaceAll("&", "&amp;")
+    .replace(/&(?!(?:amp|lt|gt|quot|apos|nbsp|#\d+|#x[\da-f]+);)/gi, "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll("\n", "<br>");
