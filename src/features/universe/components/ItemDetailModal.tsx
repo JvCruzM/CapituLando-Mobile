@@ -1,5 +1,5 @@
 import React from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Image, ScrollView, StyleSheet, View } from "react-native";
 import {
   Button,
   Chip,
@@ -188,9 +188,27 @@ function EncyclopediaDetail({ item }: { item: EncyclopediaItem }) {
 
 function CharacterDetail({ character }: { character: CharacterItem }) {
   const roleMeta = CHARACTER_ROLES.find((r) => r.role === character.role);
+  const bioFacts = [
+    character.age !== null && character.age !== undefined
+      ? `Idade: ${character.age}`
+      : null,
+    character.height ? `Altura: ${character.height}` : null,
+    character.weight ? `Peso: ${character.weight}` : null,
+    character.zodiac ? `Signo: ${character.zodiac}` : null,
+    character.bloodType ? `Tipo sanguíneo: ${character.bloodType}` : null,
+    character.mbti ? `MBTI: ${character.mbti}` : null,
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <View style={styles.detailContainer}>
+      {character.characterImage ? (
+        <Image
+          source={{ uri: character.characterImage }}
+          resizeMode={character.imageFit === "contain" ? "contain" : "cover"}
+          style={styles.coverImage}
+        />
+      ) : null}
+
       <View style={styles.headerRow}>
         <Surface
           style={[
@@ -230,6 +248,16 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
         ) : null}
       </View>
 
+      {bioFacts.length > 0 ? (
+        <View style={styles.chipsWrap}>
+          {bioFacts.map((fact) => (
+            <Chip key={fact} compact style={styles.tagChip}>
+              {fact}
+            </Chip>
+          ))}
+        </View>
+      ) : null}
+
       {character.quote ? (
         <Surface style={styles.quoteBox} elevation={0}>
           <Text variant="bodyMedium" style={styles.quoteText}>
@@ -238,14 +266,19 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
         </Surface>
       ) : null}
 
-      <Divider style={styles.divider} />
-
-      <Text variant="titleSmall" style={styles.sectionHeader}>
-        Ocupação & Arquétipo
-      </Text>
-      <Text variant="bodyMedium">
-        {character.occupation} — {character.archetype}
-      </Text>
+      {character.occupation || character.archetype ? (
+        <>
+          <Divider style={styles.divider} />
+          <Text variant="titleSmall" style={styles.sectionHeader}>
+            Ocupação & Arquétipo
+          </Text>
+          <Text variant="bodyMedium">
+            {[character.occupation, character.archetype]
+              .filter(Boolean)
+              .join(" — ")}
+          </Text>
+        </>
+      ) : null}
 
       <Divider style={styles.divider} />
 
@@ -253,7 +286,7 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
         Motivação Principal
       </Text>
       <Text variant="bodyMedium" style={styles.bodyParagraph}>
-        {character.motivation}
+        {character.motivation || "Não informada."}
       </Text>
 
       {character.internalConflict ? (
@@ -273,7 +306,7 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
         História de Origem (Backstory)
       </Text>
       <Text variant="bodyMedium" style={styles.bodyParagraph}>
-        {character.backstory}
+        {character.backstory || "Em desenvolvimento."}
       </Text>
 
       <Divider style={styles.divider} />
@@ -283,12 +316,39 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
       </Text>
       <Text variant="bodySmall" style={styles.bodyParagraph}>
         <Text style={{ fontWeight: "bold" }}>Aparência: </Text>
-        {character.appearance}
+        {character.appearance || "Não especificada."}
       </Text>
       <Text variant="bodySmall" style={styles.bodyParagraph}>
         <Text style={{ fontWeight: "bold" }}>Personalidade: </Text>
-        {character.personality}
+        {character.personality || "Não especificada."}
       </Text>
+
+      {character.likes || character.dislikes || character.drinks ? (
+        <>
+          <Divider style={styles.divider} />
+          <Text variant="titleSmall" style={styles.sectionHeader}>
+            Preferências & Hábitos
+          </Text>
+          {character.likes ? (
+            <Text variant="bodySmall" style={styles.bodyParagraph}>
+              <Text style={{ fontWeight: "bold" }}>Gostos: </Text>
+              {character.likes}
+            </Text>
+          ) : null}
+          {character.dislikes ? (
+            <Text variant="bodySmall" style={styles.bodyParagraph}>
+              <Text style={{ fontWeight: "bold" }}>Desgostos: </Text>
+              {character.dislikes}
+            </Text>
+          ) : null}
+          {character.drinks ? (
+            <Text variant="bodySmall" style={styles.bodyParagraph}>
+              <Text style={{ fontWeight: "bold" }}>Bebidas: </Text>
+              {character.drinks}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
 
       {character.traits && character.traits.length > 0 && (
         <View style={styles.chipsWrap}>
@@ -308,6 +368,14 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
 
   return (
     <View style={styles.detailContainer}>
+      {event.eventImage ? (
+        <Image
+          source={{ uri: event.eventImage }}
+          resizeMode="cover"
+          style={styles.coverImage}
+        />
+      ) : null}
+
       <View style={styles.headerRow}>
         <Surface
           style={[styles.iconBadge, { backgroundColor: impColor }]}
@@ -324,7 +392,7 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
             {event.title}
           </Text>
           <Text variant="bodySmall" style={styles.subtitle}>
-            {event.era} • {event.dateDisplay}
+            {[event.era, event.dateDisplay].filter(Boolean).join(" • ")}
           </Text>
         </View>
       </View>
@@ -336,6 +404,9 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
         >
           Impacto: {event.importance}
         </Chip>
+        {event.chapterTitle ? (
+          <Chip icon="book-open-variant">{event.chapterTitle}</Chip>
+        ) : null}
         {event.location ? (
           <Chip icon="map-marker">{event.location}</Chip>
         ) : null}
@@ -344,17 +415,10 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
       <Divider style={styles.divider} />
 
       <Text variant="titleSmall" style={styles.sectionHeader}>
-        Resumo do Evento
+        Descrição do Evento
       </Text>
       <Text variant="bodyMedium" style={styles.bodyParagraph}>
-        {event.summary}
-      </Text>
-
-      <Text variant="titleSmall" style={styles.sectionHeader}>
-        Descrição Detalhada
-      </Text>
-      <Text variant="bodyMedium" style={styles.bodyParagraph}>
-        {event.description}
+        {event.description || event.summary}
       </Text>
 
       {event.consequences ? (
@@ -376,9 +440,9 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
             Personagens Envolvidos
           </Text>
           <View style={styles.chipsWrap}>
-            {event.charactersInvolved.map((charName) => (
+            {event.charactersInvolved.map((charName, index) => (
               <Chip
-                key={charName}
+                key={`${charName}-${index}`}
                 icon="account"
                 compact
                 style={styles.tagChip}
@@ -408,6 +472,11 @@ const styles = StyleSheet.create({
   },
   detailContainer: {
     gap: 10,
+  },
+  coverImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: 12,
   },
   headerRow: {
     flexDirection: "row",
