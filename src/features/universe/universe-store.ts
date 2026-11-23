@@ -13,6 +13,7 @@ const emptyData = (): UniverseData => ({
   encyclopediaItems: [],
   characters: [],
   timelineEvents: [],
+  chapters: [],
 });
 interface UniverseState extends UniverseData {
   snapshotKey: string;
