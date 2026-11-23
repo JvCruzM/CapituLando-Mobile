@@ -9,7 +9,12 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Permita que o CapituLando acesse autenticação biométrica para proteger suas credenciais e sessões."
+        }
+      ],
       "expo-sharing",
       "expo-notifications",
       ["expo-image-picker", {

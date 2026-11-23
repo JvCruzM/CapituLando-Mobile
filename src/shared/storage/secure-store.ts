@@ -2,6 +2,16 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import type { Session } from "../../features/auth/services/auth-api";
 
+export {
+  AFTER_FIRST_UNLOCK,
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  ALWAYS,
+  ALWAYS_THIS_DEVICE_ONLY,
+  WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
+  WHEN_UNLOCKED,
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+} from "expo-secure-store";
+
 /**
  * Chaves padronizadas para armazenamento seguro de dados do sistema no SecureStore.
  * As chaves contêm apenas caracteres alfanuméricos e pontos, atendendo aos requisitos do SecureStore.
@@ -9,9 +19,12 @@ import type { Session } from "../../features/auth/services/auth-api";
 export const SECURE_STORE_KEYS = {
   AUTH_SESSION: "capitulando.auth.session",
   AUTH_TOKEN: "capitulando.auth.token",
+  AUTH_REFRESH_TOKEN: "capitulando.auth.refresh_token",
   USER_PROFILE: "capitulando.user.profile",
   SYSTEM_SETTINGS: "capitulando.system.settings",
   SYSTEM_DEVICE_ID: "capitulando.system.device_id",
+  BIOMETRIC_CONFIG: "capitulando.system.biometrics",
+  OFFLINE_CACHE: "capitulando.system.offline_cache",
 } as const;
 
 export type SecureStoreKey =
@@ -97,6 +110,44 @@ export async function getItem(
     );
     return null;
   }
+}
+
+/**
+ * Verifica se um item existe no SecureStore.
+ */
+export async function hasItem(
+  key: SecureStoreKey,
+  options?: SecureStore.SecureStoreOptions,
+): Promise<boolean> {
+  const item = await getItem(key, options);
+  return item !== null;
+}
+
+/**
+ * Armazena uma string exigindo autenticação biométrica (Face ID, Touch ID ou biometria nativa).
+ */
+export async function setItemWithAuth(
+  key: SecureStoreKey,
+  value: string,
+  promptMessage = "Confirme sua identidade para proteger seus dados.",
+): Promise<void> {
+  return setItem(key, value, {
+    requireAuthentication: true,
+    authenticationPrompt: promptMessage,
+  });
+}
+
+/**
+ * Recupera uma string exigindo autenticação biométrica (Face ID, Touch ID ou biometria nativa).
+ */
+export async function getItemWithAuth(
+  key: SecureStoreKey,
+  promptMessage = "Confirme sua identidade para acessar seus dados protegidos.",
+): Promise<string | null> {
+  return getItem(key, {
+    requireAuthentication: true,
+    authenticationPrompt: promptMessage,
+  });
 }
 
 /**
@@ -251,6 +302,9 @@ export const secureStore = {
   isAvailable: isSecureStoreAvailable,
   setItem,
   getItem,
+  hasItem,
+  setItemWithAuth,
+  getItemWithAuth,
   deleteItem,
   setObject,
   getObject,
