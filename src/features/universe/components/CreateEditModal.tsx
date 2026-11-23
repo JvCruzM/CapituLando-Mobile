@@ -93,6 +93,16 @@ export function CreateEditModal({
     {},
   );
   const [encTags, setEncTags] = useState("");
+  const [encImage, setEncImage] = useState<string | null>(null);
+  const [encRaceId, setEncRaceId] = useState<string | null>(null);
+  const [encParentLocationId, setEncParentLocationId] = useState<string | null>(
+    null,
+  );
+  const [encHeadquartersLocationId, setEncHeadquartersLocationId] = useState<
+    string | null
+  >(null);
+  const [encConceptCategory, setEncConceptCategory] =
+    useState<string>("Lore/História");
 
   // Character Form Fields
   const [charName, setCharName] = useState("");
@@ -155,6 +165,15 @@ export function CreateEditModal({
         setEncDescription(it.description);
         setEncAttributes({ ...it.attributes });
         setEncTags(it.tags ? it.tags.join(", ") : "");
+        setEncImage(it.image ?? null);
+        setEncRaceId(it.raceId ?? null);
+        setEncParentLocationId(it.parentLocationId ?? null);
+        setEncHeadquartersLocationId(it.headquartersLocationId ?? null);
+        setEncConceptCategory(
+          it.conceptCategory ??
+            it.attributes["Tipo de Conceito"] ??
+            "Lore/História",
+        );
       } else {
         setEncCategory(formMode.defaultCategory ?? "races");
         setEncName("");
@@ -162,6 +181,11 @@ export function CreateEditModal({
         setEncDescription("");
         setEncAttributes(emptyAttributes(formMode.defaultCategory ?? "races"));
         setEncTags("");
+        setEncImage(null);
+        setEncRaceId(null);
+        setEncParentLocationId(null);
+        setEncHeadquartersLocationId(null);
+        setEncConceptCategory("Lore/História");
       }
     } else if (formMode.targetType === "character") {
       if (formMode.mode === "edit") {
@@ -265,7 +289,9 @@ export function CreateEditModal({
         ? `${isEdit ? "Editar" : "Novo"} Personagem`
         : `${isEdit ? "Editar" : "Novo Evento da"} Cronologia`;
 
-  async function handlePickImage(target: "character" | "event") {
+  async function handlePickImage(
+    target: "character" | "event" | "encyclopedia",
+  ) {
     if (busy) return;
     setValidationError("");
     setPickingImage(true);
@@ -273,7 +299,8 @@ export function CreateEditModal({
       const photo = await chooseProfilePhoto();
       if (photo) {
         if (target === "character") setCharImage(photo);
-        else setTimeEventImage(photo);
+        else if (target === "event") setTimeEventImage(photo);
+        else setEncImage(photo);
       }
     } catch (cause) {
       setValidationError(accountErrorMessage(cause));
@@ -302,7 +329,19 @@ export function CreateEditModal({
           setValidationError("O nome deve ter no máximo 100 caracteres.");
           return;
         }
+        const selectedRace = races.find((r) => r.id === encRaceId);
+        const selectedParent = locations.find(
+          (l) => l.id === encParentLocationId,
+        );
+        const selectedHq = locations.find(
+          (l) => l.id === encHeadquartersLocationId,
+        );
+
         const attributes = { ...encAttributes };
+        if (encCategory === "theme" || encConceptCategory) {
+          attributes["Tipo de Conceito"] = encConceptCategory;
+        }
+
         const tags = encTags
           .split(",")
           .map((t) => t.trim())
@@ -316,6 +355,21 @@ export function CreateEditModal({
             description: encDescription.trim(),
             attributes,
             tags,
+            image: encImage,
+            raceId: encCategory === "creatures" ? encRaceId : null,
+            raceName:
+              encCategory === "creatures" ? selectedRace?.name ?? null : null,
+            parentLocationId:
+              encCategory === "locations" ? encParentLocationId : null,
+            parentLocationName:
+              encCategory === "locations" ? selectedParent?.name ?? null : null,
+            headquartersLocationId:
+              encCategory === "organizations"
+                ? encHeadquartersLocationId
+                : null,
+            headquartersLocationName:
+              encCategory === "organizations" ? selectedHq?.name ?? null : null,
+            conceptCategory: encConceptCategory,
           },
           isEdit ? (formMode as { item: EncyclopediaItem }).item.id : undefined,
         );
@@ -451,6 +505,48 @@ export function CreateEditModal({
             {formMode.targetType === "encyclopedia" && (
               <View style={styles.formSection}>
                 <Text variant="labelLarge" style={styles.fieldLabel}>
+                  Imagem da Entrada:
+                </Text>
+                {encImage ? (
+                  <View style={styles.imagePreviewBox}>
+                    <Image
+                      source={{ uri: encImage }}
+                      resizeMode="cover"
+                      style={styles.imagePreview}
+                    />
+                    <View style={styles.attrRow}>
+                      <Button
+                        mode="outlined"
+                        icon="image-edit"
+                        disabled={busy}
+                        onPress={() => void handlePickImage("encyclopedia")}
+                        style={styles.attrInput}
+                      >
+                        Trocar imagem
+                      </Button>
+                      <Button
+                        mode="text"
+                        textColor={theme.colors.error}
+                        disabled={busy}
+                        onPress={() => setEncImage(null)}
+                      >
+                        Remover
+                      </Button>
+                    </View>
+                  </View>
+                ) : (
+                  <Button
+                    mode="outlined"
+                    icon="image-plus"
+                    loading={pickingImage}
+                    disabled={busy}
+                    onPress={() => void handlePickImage("encyclopedia")}
+                  >
+                    Selecionar imagem da entrada
+                  </Button>
+                )}
+
+                <Text variant="labelLarge" style={styles.fieldLabel}>
                   Categoria da Enciclopédia:
                 </Text>
                 <ScrollView
@@ -476,6 +572,153 @@ export function CreateEditModal({
                     </Chip>
                   ))}
                 </ScrollView>
+
+                {encCategory === "theme" && (
+                  <View>
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Tipo de Conceito / Universo:
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoryScroll}
+                    >
+                      {[
+                        "Lore/História",
+                        "Tema",
+                        "Regra de Magia",
+                        "Local",
+                        "Organização",
+                        "Conceito Geral",
+                      ].map((catName) => (
+                        <Chip
+                          key={catName}
+                          selected={encConceptCategory === catName}
+                          disabled={busy}
+                          onPress={() => {
+                            setEncConceptCategory(catName);
+                            setEncAttributes((curr) => ({
+                              ...curr,
+                              "Tipo de Conceito": catName,
+                            }));
+                          }}
+                          style={styles.categoryChip}
+                        >
+                          {catName}
+                        </Chip>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {encCategory === "creatures" && (
+                  <View>
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Raça da Criatura:
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoryScroll}
+                    >
+                      <Chip
+                        selected={!encRaceId}
+                        disabled={busy}
+                        onPress={() => setEncRaceId(null)}
+                        style={styles.categoryChip}
+                      >
+                        Sem raça vinculada
+                      </Chip>
+                      {races.map((r) => (
+                        <Chip
+                          key={r.id}
+                          icon="dna"
+                          selected={encRaceId === r.id}
+                          disabled={busy}
+                          onPress={() => setEncRaceId(r.id)}
+                          style={styles.categoryChip}
+                        >
+                          {r.name}
+                        </Chip>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {encCategory === "locations" && (
+                  <View>
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Local Pai (Hierarquia Geográfica):
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoryScroll}
+                    >
+                      <Chip
+                        selected={!encParentLocationId}
+                        disabled={busy}
+                        onPress={() => setEncParentLocationId(null)}
+                        style={styles.categoryChip}
+                      >
+                        Nenhum (Local Raiz / Principal)
+                      </Chip>
+                      {locations
+                        .filter(
+                          (loc) =>
+                            !isEdit ||
+                            loc.id !==
+                              (formMode as { item: EncyclopediaItem }).item?.id,
+                        )
+                        .map((loc) => (
+                          <Chip
+                            key={loc.id}
+                            icon="map-marker-radius"
+                            selected={encParentLocationId === loc.id}
+                            disabled={busy}
+                            onPress={() => setEncParentLocationId(loc.id)}
+                            style={styles.categoryChip}
+                          >
+                            {loc.name}
+                          </Chip>
+                        ))}
+                    </ScrollView>
+                  </View>
+                )}
+
+                {encCategory === "organizations" && (
+                  <View>
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Sede / Quartel-General:
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoryScroll}
+                    >
+                      <Chip
+                        selected={!encHeadquartersLocationId}
+                        disabled={busy}
+                        onPress={() => setEncHeadquartersLocationId(null)}
+                        style={styles.categoryChip}
+                      >
+                        Sem sede definida
+                      </Chip>
+                      {locations.map((loc) => (
+                        <Chip
+                          key={loc.id}
+                          icon="office-building"
+                          selected={encHeadquartersLocationId === loc.id}
+                          disabled={busy}
+                          onPress={() => setEncHeadquartersLocationId(loc.id)}
+                          style={styles.categoryChip}
+                        >
+                          {loc.name}
+                        </Chip>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
 
                 <TextInput
                   mode="outlined"
