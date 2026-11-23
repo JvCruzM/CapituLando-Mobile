@@ -13,6 +13,8 @@ import {
   listCharacterOrganizations,
   listStoryOrganizations,
   type CreateCharacterOrganizationPayload,
+  type UpdateCharacterOrganizationPayload,
+  updateCharacterOrganization,
 } from "../../character-organizations/services/characterOrganizationService";
 import {
   createCharacterRelationship,
@@ -23,56 +25,51 @@ import {
 } from "../../character-relationships/services/characterRelationshipService";
 import { universeKey } from "../../universe/services/universe-api";
 
-export const charactersQueryKey = (ownerId: string, storyId: string) =>
-  ["story-characters", ownerId, storyId] as const;
-
-export const characterLinksQueryKey = (ownerId: string, storyId: string) =>
-  ["story-character-links", ownerId, storyId] as const;
+export const charactersQueryKey = (storyId: string) =>
+  ["story-characters", storyId] as const;
 
 export function useCharactersWorkspace(ownerId: string, storyId: string) {
   const queryClient = useQueryClient();
   const enabled = Boolean(ownerId && storyId);
 
   const charactersQuery = useQuery({
-    queryKey: charactersQueryKey(ownerId, storyId),
+    queryKey: charactersQueryKey(storyId),
     queryFn: () => listCharacters(storyId),
     enabled,
   });
 
   const racesQuery = useQuery({
-    queryKey: ["story-races", ownerId, storyId],
+    queryKey: ["story-races", storyId],
     queryFn: () => listStoryRaces(storyId),
     enabled,
   });
 
   const organizationsQuery = useQuery({
-    queryKey: ["story-organizations", ownerId, storyId],
+    queryKey: ["story-organizations", storyId],
     queryFn: () => listStoryOrganizations(storyId),
     enabled,
   });
 
   const characterOrganizationsQuery = useQuery({
-    queryKey: ["story-character-organizations", ownerId, storyId],
+    queryKey: ["story-character-organizations", storyId],
     queryFn: () => listCharacterOrganizations(storyId),
     enabled,
   });
 
   const relationshipsQuery = useQuery({
-    queryKey: ["story-character-relationships", ownerId, storyId],
+    queryKey: ["story-character-relationships", storyId],
     queryFn: () => listCharacterRelationships(storyId),
     enabled,
   });
 
   const invalidateAll = async () => {
     await Promise.all([
+      queryClient.invalidateQueries({ queryKey: charactersQueryKey(storyId) }),
       queryClient.invalidateQueries({
-        queryKey: charactersQueryKey(ownerId, storyId),
+        queryKey: ["story-character-organizations", storyId],
       }),
       queryClient.invalidateQueries({
-        queryKey: ["story-character-organizations", ownerId, storyId],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["story-character-relationships", ownerId, storyId],
+        queryKey: ["story-character-relationships", storyId],
       }),
       queryClient.invalidateQueries({
         queryKey: universeKey(ownerId, storyId),
@@ -104,6 +101,17 @@ export function useCharactersWorkspace(ownerId: string, storyId: string) {
   const addOrganizationLinkMutation = useMutation({
     mutationFn: (payload: CreateCharacterOrganizationPayload) =>
       createCharacterOrganization(storyId, payload),
+    onSuccess: invalidateAll,
+  });
+
+  const updateOrganizationLinkMutation = useMutation({
+    mutationFn: ({
+      linkId,
+      payload,
+    }: {
+      linkId: string;
+      payload: UpdateCharacterOrganizationPayload;
+    }) => updateCharacterOrganization(storyId, linkId, payload),
     onSuccess: invalidateAll,
   });
 
@@ -141,21 +149,14 @@ export function useCharactersWorkspace(ownerId: string, storyId: string) {
     organizations: organizationsQuery.data ?? [],
     characterOrganizations: characterOrganizationsQuery.data ?? [],
     relationships: relationshipsQuery.data ?? [],
-    error:
-      charactersQuery.error ??
-      racesQuery.error ??
-      organizationsQuery.error ??
-      characterOrganizationsQuery.error ??
-      relationshipsQuery.error,
     isLoading:
       charactersQuery.isLoading ||
       racesQuery.isLoading ||
-      organizationsQuery.isLoading ||
-      characterOrganizationsQuery.isLoading ||
-      relationshipsQuery.isLoading,
+      organizationsQuery.isLoading,
     saveCharacter: saveCharacterMutation.mutateAsync,
     removeCharacter: removeCharacterMutation.mutateAsync,
     addOrganizationLink: addOrganizationLinkMutation.mutateAsync,
+    updateOrganizationLink: updateOrganizationLinkMutation.mutateAsync,
     removeOrganizationLink: removeOrganizationLinkMutation.mutateAsync,
     saveRelationship: saveRelationshipMutation.mutateAsync,
     removeRelationship: removeRelationshipMutation.mutateAsync,
@@ -163,6 +164,7 @@ export function useCharactersWorkspace(ownerId: string, storyId: string) {
       saveCharacterMutation.isPending ||
       removeCharacterMutation.isPending ||
       addOrganizationLinkMutation.isPending ||
+      updateOrganizationLinkMutation.isPending ||
       removeOrganizationLinkMutation.isPending ||
       saveRelationshipMutation.isPending ||
       removeRelationshipMutation.isPending,
