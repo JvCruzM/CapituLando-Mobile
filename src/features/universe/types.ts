@@ -28,16 +28,32 @@ export type CharacterRole =
   | "Aliado"
   | "Secundário";
 
+export type CharacterImageFit = "cover" | "contain";
+export type CharacterImagePosition = "center" | "top" | "bottom";
+
 export interface CharacterItem {
-  notes?: string;
   id: string;
   name: string;
   alias?: string;
   role: CharacterRole;
+  raceId?: string | null;
   race: string;
+  organizationIds?: string[];
   organization?: string;
   occupation: string;
   archetype: string;
+  age?: number | null;
+  height?: string;
+  weight?: string;
+  zodiac?: string;
+  bloodType?: string;
+  mbti?: string;
+  likes?: string;
+  dislikes?: string;
+  drinks?: string;
+  characterImage?: string | null;
+  imageFit?: CharacterImageFit;
+  imagePosition?: CharacterImagePosition;
   appearance: string;
   personality: string;
   motivation: string;
@@ -60,8 +76,13 @@ export interface TimelineEventItem {
   importance: TimelineImportance;
   summary: string;
   description: string;
+  chapterId?: string | null;
+  chapterTitle?: string;
+  locationId?: string | null;
   location?: string;
+  characterIds?: string[];
   charactersInvolved: string[];
+  eventImage?: string | null;
   consequences?: string;
   createdAt: string;
   updatedAt: string;
