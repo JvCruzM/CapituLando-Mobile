@@ -13,7 +13,8 @@ export type FormattingAction =
   | 'bold'
   | 'italic'
   | 'underline'
-  | 'heading'
+  | 'h1'
+  | 'h2'
   | 'quote'
   | 'list';
 
