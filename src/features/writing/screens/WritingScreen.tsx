@@ -1,12 +1,4 @@
-import { RichTextEditor } from "../components/RichTextEditor";
-import { plainText } from "../components/editor-content";
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,8 +12,9 @@ import {
   SafeAreaView,
   KeyboardAvoidingView,
   Platform,
-} from "react-native";
-import * as Clipboard from "expo-clipboard";
+  type TextInputSelectionChangeEvent,
+} from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import {
   Feather,
   Maximize2,
@@ -39,32 +32,52 @@ import {
   Share2,
   RotateCcw,
   BookOpen,
-} from "lucide-react-native";
+  Bold,
+  Italic,
+  Underline,
+  Heading2,
+  Quote,
+  List,
+  Download,
+} from 'lucide-react-native';
 import type {
   FontChoice,
+  FormattingAction,
   SpacingChoice,
   WritingEntry,
   WritingItemKind,
+  WritingItemStatus,
   WritingRecoveryState,
   WritingSessionConflict,
   WritingStorySummary,
-} from "../types";
+} from '../types';
 import {
+  applyFormattingToSelection,
   clearLocalRecovery,
   countWords,
   detectRecoveryConflict,
   fetchEntriesFromApi,
   fetchRemoteRecoveryFromApi,
+  getStatusLabel,
   loadLocalRecovery,
   readCachedEntries,
   saveEntryWithVersionControl,
   saveLocalRecovery,
   syncRemoteRecoveryToApi,
   type WritingApiConfig,
-} from "../writing-store";
-import { useTheme, Button, Dialog, Portal } from "react-native-paper";
-import { useAuthStore } from "../../auth/session";
-import { SessionConflictModal } from "../components/SessionConflictModal";
+} from '../writing-store';
+import { exportWritingAsPdf, exportWritingAsTxt } from '../export-writing';
+import {
+  SessionConflictModal,
+  type ConflictResolutionChoice,
+} from '../components/SessionConflictModal';
+
+const STATUS_OPTIONS: WritingItemStatus[] = [
+  'draft',
+  'in_review',
+  'published',
+  'archived',
+];
 
 interface WritingScreenProps {
   userId: string;
@@ -89,13 +102,13 @@ export function WritingScreen({
   onRemoteRecoveryChange,
   onDataChanged,
 }: WritingScreenProps) {
-  const isDark = useTheme().dark;
-  const sessionIdRef = useRef(useAuthStore.getState().session?.sessionId ?? "");
+  const isDark = useColorScheme() === 'dark';
+  const sessionIdRef = useRef(
+    `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  );
   const hydratedRef = useRef(false);
-  const [hydrating, setHydrating] = useState(true);
-  const [resolving, setResolving] = useState(false);
+  const bodyInputRef = useRef<React.ComponentRef<typeof TextInput> | null>(null);
 
-  // Refs para evitar que mudanças de recuperação remota reinicializem o editor
   const remoteRecoveryPropRef = useRef(remoteRecovery);
   remoteRecoveryPropRef.current = remoteRecovery;
 
@@ -108,27 +121,29 @@ export function WritingScreen({
       token: authToken,
       userId,
       sessionId: sessionIdRef.current,
-      storyId,
     }),
-    [apiBaseUrl, authToken, userId, storyId],
+    [apiBaseUrl, authToken, userId],
   );
 
-  const [kind, setKind] = useState<WritingItemKind>("chapter");
+  const [kind, setKind] = useState<WritingItemKind>('chapter');
+  const [status, setStatus] = useState<WritingItemStatus>('in_review');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingVersion, setEditingVersion] = useState<number | undefined>(
     undefined,
   );
-  const [title, setTitle] = useState("Novo Capítulo");
-  const [content, setContent] = useState("");
+  const [title, setTitle] = useState('Novo Capítulo');
+  const [content, setContent] = useState('');
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
 
   const liveEditorRef = useRef({
-    title: "Novo Capítulo",
-    content: "",
-    kind: "chapter" as WritingItemKind,
+    title: 'Novo Capítulo',
+    content: '',
+    kind: 'chapter' as WritingItemKind,
+    status: 'in_review' as WritingItemStatus,
   });
   useEffect(() => {
-    liveEditorRef.current = { title, content, kind };
-  }, [title, content, kind]);
+    liveEditorRef.current = { title, content, kind, status };
+  }, [title, content, kind, status]);
 
   const [chapters, setChapters] = useState<WritingEntry[]>([]);
   const [drafts, setDrafts] = useState<WritingEntry[]>([]);
@@ -136,25 +151,23 @@ export function WritingScreen({
 
   const [isSaved, setIsSaved] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState<'txt' | 'pdf' | null>(null);
   const [savedToast, setSavedToast] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isFocus, setIsFocus] = useState(false);
   const [showTypography, setShowTypography] = useState(false);
   const [recoveryBanner, setRecoveryBanner] = useState<string | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
-  const [chapterConflict, setChapterConflict] = useState<WritingEntry | null>(
-    null,
-  );
-  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [conflict, setConflict] = useState<WritingSessionConflict | null>(null);
 
-  const [font, setFont] = useState<FontChoice>("serif");
+  const [font, setFont] = useState<FontChoice>('serif');
   const [fontSize, setFontSize] = useState(18);
-  const [spacing, setSpacing] = useState<SpacingChoice>("relaxed");
+  const [spacing, setSpacing] = useState<SpacingChoice>('relaxed');
   const [indent, setIndent] = useState(true);
 
   const applyRecovery = useCallback((state: WritingRecoveryState) => {
     setKind(state.kind);
+    setStatus(state.status);
     setEditingId(state.itemId);
     setEditingVersion(state.version);
     setTitle(state.title);
@@ -162,15 +175,15 @@ export function WritingScreen({
     setIsSaved(false);
   }, []);
 
-  // Efeito exclusivo para troca de usuário ou história
   useEffect(() => {
     let active = true;
     hydratedRef.current = false;
-    setHydrating(true);
     setEditingId(null);
     setEditingVersion(undefined);
-    setTitle("Novo Capítulo");
-    setContent("");
+    setKind('chapter');
+    setStatus('in_review');
+    setTitle('Novo Capítulo');
+    setContent('');
     setIsSaved(true);
     setRecoveryBanner(null);
     setErrorBanner(null);
@@ -195,7 +208,7 @@ export function WritingScreen({
             setErrorBanner(
               err instanceof Error
                 ? err.message
-                : "Falha ao sincronizar itens com o servidor. Exibindo cache local.",
+                : 'Falha ao sincronizar itens com o servidor. Exibindo cache local.',
             );
           }
         }
@@ -226,57 +239,40 @@ export function WritingScreen({
         setConflict(detected);
       } else if (
         local &&
-        (local.content.trim() || local.title !== "Novo Capítulo")
+        (local.content.trim() || local.title !== 'Novo Capítulo')
       ) {
         applyRecovery(local);
-        setRecoveryBanner("Rascunho recuperado do armazenamento local.");
+        setRecoveryBanner('Rascunho recuperado do armazenamento local.');
       } else if (
         serverRecovery &&
         (serverRecovery.content.trim() ||
-          serverRecovery.title !== "Novo Capítulo")
+          serverRecovery.title !== 'Novo Capítulo')
       ) {
         applyRecovery(serverRecovery);
         await saveLocalRecovery(userId, storyId, serverRecovery);
-        setRecoveryBanner("Rascunho recuperado da sessão remota.");
+        setRecoveryBanner('Rascunho recuperado da sessão remota.');
       }
 
       hydratedRef.current = true;
-      setHydrating(false);
     }
 
-    void init().catch((err) => {
-      if (active) {
-        setHydrating(false);
-        setErrorBanner(
-          err instanceof Error
-            ? err.message
-            : "Não foi possível carregar a escrita.",
-        );
-      }
-    });
+    void init();
     return () => {
       active = false;
     };
   }, [apiConfig, applyRecovery, storyId, userId]);
 
-  // Atualização contínua da recuperação (isolada da inicialização)
   useEffect(() => {
-    if (
-      !hydratedRef.current ||
-      isSaved ||
-      saving ||
-      conflict ||
-      chapterConflict
-    )
-      return;
+    if (!hydratedRef.current || isSaved || saving) return;
 
     const snapshot: WritingRecoveryState = {
       storyId,
       itemId: editingId,
       kind,
+      status,
       title,
       content,
-      version: editingVersion ?? 0,
+      version: (editingVersion ?? 0) + 1,
       sessionId: sessionIdRef.current,
       updatedAt: new Date().toISOString(),
     };
@@ -292,7 +288,7 @@ export function WritingScreen({
             code?: string;
             remoteConflict?: WritingRecoveryState;
           };
-          if (e?.code === "SESSION_CONFLICT" && e.remoteConflict) {
+          if (e?.code === 'SESSION_CONFLICT' && e.remoteConflict) {
             setConflict({ local: snapshot, remote: e.remoteConflict });
           }
         },
@@ -302,27 +298,59 @@ export function WritingScreen({
     return () => clearTimeout(timer);
   }, [
     apiConfig,
-    conflict,
-    chapterConflict,
     content,
     editingId,
     editingVersion,
     isSaved,
     kind,
     saving,
+    status,
     storyId,
     title,
     userId,
   ]);
 
-  const handleResolveConflict = async (
-    choice: "local" | "remote" | "merge",
+  const handleSaveAsNewDraft = async (
+    draftTitle: string,
+    draftContent: string,
   ) => {
-    if (!conflict || resolving) return;
-    setResolving(true);
-    setErrorBanner(null);
+    const cleanDraftTitle = `${draftTitle.trim() || 'Sem Título'} (Rascunho)`;
+    const { saved, storyEntries } = await saveEntryWithVersionControl(
+      apiConfig,
+      {
+        id: null,
+        storyId,
+        title: cleanDraftTitle,
+        content: draftContent,
+        kind: 'draft',
+        status: 'draft',
+        forceOverwrite: true,
+      },
+    );
+
+    setChapters(storyEntries.chapters);
+    setDrafts(storyEntries.drafts);
+    setKind('draft');
+    setStatus('draft');
+    setEditingId(saved.id);
+    setEditingVersion(saved.version);
+    setTitle(saved.title);
+    setContent(saved.content);
+    setIsSaved(true);
+    await clearLocalRecovery(userId, storyId);
+    if (apiConfig.baseUrl) {
+      await syncRemoteRecoveryToApi(apiConfig, null, true).catch(() => undefined);
+    }
+    onRemoteRecoveryChangeRef.current?.(null);
+    onDataChanged?.();
+    setRecoveryBanner('Cópia salva como novo rascunho.');
+  };
+
+  const handleResolveConflict = async (choice: ConflictResolutionChoice) => {
+    if (!conflict) return;
+
     try {
-      if (choice === "local") {
+      if (choice === 'local') {
         const updatedLocal = {
           ...conflict.local,
           sessionId: sessionIdRef.current,
@@ -330,38 +358,25 @@ export function WritingScreen({
         applyRecovery(updatedLocal);
         await saveLocalRecovery(userId, storyId, updatedLocal);
         if (apiConfig.baseUrl) {
-          await syncRemoteRecoveryToApi(apiConfig, updatedLocal, true);
+          await syncRemoteRecoveryToApi(apiConfig, updatedLocal, true).catch(
+            () => undefined,
+          );
         }
         onRemoteRecoveryChangeRef.current?.(updatedLocal);
-        setRecoveryBanner("Conflito resolvido: versão atual mantida.");
-      } else if (choice === "remote") {
-        if (
-          conflict.remote.storyId !== storyId &&
-          stories.some((s) => s.id === conflict.remote.storyId)
-        ) {
-          await saveLocalRecovery(
-            userId,
-            conflict.remote.storyId,
-            conflict.remote,
-          );
-          setConflict(null);
-          onSelectStory?.(conflict.remote.storyId);
-          return;
-        }
+        setRecoveryBanner('Conflito resolvido: versão atual mantida.');
+      } else if (choice === 'remote') {
         applyRecovery(conflict.remote);
         await saveLocalRecovery(userId, storyId, conflict.remote);
         onRemoteRecoveryChangeRef.current?.(conflict.remote);
-        setRecoveryBanner(
-          "Conflito resolvido: versão da outra sessão aplicada.",
-        );
-      } else {
+        setRecoveryBanner('Conflito resolvido: versão da outra sessão aplicada.');
+      } else if (choice === 'merge') {
         const mergedText = [
           conflict.local.content.trim(),
-          "--- Outra Sessão ---",
+          '--- Outra Sessão ---',
           conflict.remote.content.trim(),
         ]
           .filter(Boolean)
-          .join("\n\n");
+          .join('\n\n');
 
         const merged: WritingRecoveryState = {
           ...conflict.local,
@@ -372,21 +387,26 @@ export function WritingScreen({
         applyRecovery(merged);
         await saveLocalRecovery(userId, storyId, merged);
         if (apiConfig.baseUrl) {
-          await syncRemoteRecoveryToApi(apiConfig, merged, true);
+          await syncRemoteRecoveryToApi(apiConfig, merged, true).catch(
+            () => undefined,
+          );
         }
         onRemoteRecoveryChangeRef.current?.(merged);
-        setRecoveryBanner("Conflito resolvido: versões mescladas.");
+        setRecoveryBanner('Conflito resolvido: versões mescladas.');
+      } else if (choice === 'save_as_draft') {
+        await handleSaveAsNewDraft(
+          conflict.local.title,
+          conflict.local.content,
+        );
       }
-
-      setConflict(null);
-    } catch (error) {
+    } catch (err) {
       setErrorBanner(
-        error instanceof Error
-          ? error.message
-          : "Não foi possível resolver o conflito.",
+        err instanceof Error
+          ? err.message
+          : 'Falha ao resolver conflito entre sessões.',
       );
     } finally {
-      setResolving(false);
+      setConflict(null);
     }
   };
 
@@ -398,6 +418,7 @@ export function WritingScreen({
     const sentTitle = liveEditorRef.current.title;
     const sentContent = liveEditorRef.current.content;
     const sentKind = liveEditorRef.current.kind;
+    const sentStatus = liveEditorRef.current.status;
     const sentId = editingId;
 
     try {
@@ -409,6 +430,7 @@ export function WritingScreen({
           title: sentTitle,
           content: sentContent,
           kind: sentKind,
+          status: sentStatus,
           expectedVersion: editingVersion,
           forceOverwrite,
         },
@@ -421,16 +443,21 @@ export function WritingScreen({
       const stillMatchesSent =
         liveEditorRef.current.title === sentTitle &&
         liveEditorRef.current.content === sentContent &&
-        liveEditorRef.current.kind === sentKind;
+        liveEditorRef.current.kind === sentKind &&
+        liveEditorRef.current.status === sentStatus;
 
       if (stillMatchesSent) {
         setEditingId(saved.id);
         setEditingVersion(saved.version);
+        setKind(saved.kind);
+        setStatus(saved.status);
         setIsSaved(true);
         setRecoveryBanner(null);
         await clearLocalRecovery(userId, storyId);
         if (apiConfig.baseUrl) {
-          await syncRemoteRecoveryToApi(apiConfig, null, false);
+          await syncRemoteRecoveryToApi(apiConfig, null, true).catch(
+            () => undefined,
+          );
         }
         onRemoteRecoveryChangeRef.current?.(null);
         setSavedToast(true);
@@ -443,94 +470,175 @@ export function WritingScreen({
           storyId,
           itemId: saved.id,
           kind: liveEditorRef.current.kind,
+          status: liveEditorRef.current.status,
           title: liveEditorRef.current.title,
           content: liveEditorRef.current.content,
-          version: saved.version,
+          version: saved.version + 1,
           sessionId: sessionIdRef.current,
           updatedAt: new Date().toISOString(),
         };
         await saveLocalRecovery(userId, storyId, newestSnapshot);
         onRemoteRecoveryChangeRef.current?.(newestSnapshot);
       }
-      setChapterConflict(null);
     } catch (err: unknown) {
       const e = err as {
         code?: string;
         message?: string;
         serverEntry?: WritingEntry;
       };
-      if (e?.code === "VERSION_CONFLICT" && e.serverEntry) {
-        setChapterConflict(e.serverEntry);
+      if (e?.code === 'VERSION_CONFLICT') {
+        Alert.alert(
+          'Conflito de versão',
+          e.serverEntry
+            ? `Este item já está na versão ${e.serverEntry.version} no servidor.`
+            : 'Este item foi alterado em outra sessão ou dispositivo.',
+          [
+            ...(e.serverEntry
+              ? [
+                  {
+                    text: 'Carregar versão do servidor',
+                    onPress: () => {
+                      if (!e.serverEntry) return;
+                      setEditingId(e.serverEntry.id);
+                      setEditingVersion(e.serverEntry.version);
+                      setTitle(e.serverEntry.title);
+                      setContent(e.serverEntry.content);
+                      setKind(e.serverEntry.kind);
+                      setStatus(e.serverEntry.status);
+                      setIsSaved(true);
+                    },
+                  },
+                ]
+              : []),
+            {
+              text: 'Salvar cópia como novo rascunho',
+              onPress: () =>
+                void handleSaveAsNewDraft(sentTitle, sentContent).catch(
+                  (draftErr) =>
+                    setErrorBanner(
+                      draftErr instanceof Error
+                        ? draftErr.message
+                        : 'Falha ao salvar cópia como rascunho.',
+                    ),
+                ),
+            },
+            {
+              text: 'Sobrescrever servidor',
+              style: 'destructive',
+              onPress: () => void handleSaveEntry(true),
+            },
+          ],
+        );
       } else {
-        setErrorBanner(e?.message || "Não foi possível salvar.");
+        setErrorBanner(e?.message || 'Não foi possível salvar.');
       }
     } finally {
       setSaving(false);
     }
   };
 
-  const clearRecovery = async () => {
-    try {
-      await clearLocalRecovery(userId, storyId);
-      if (apiConfig.baseUrl)
-        await syncRemoteRecoveryToApi(apiConfig, null, false);
-    } catch (e) {
-      setErrorBanner(
-        e instanceof Error
-          ? e.message
-          : "Não foi possível atualizar a recuperação.",
-      );
-    }
-  };
-  const confirmChange = (action: () => void) => {
-    if (!isSaved) setPendingAction(() => action);
-    else action();
+  const handleFormat = (action: FormattingAction) => {
+    if (saving) return;
+    const formatted = applyFormattingToSelection({
+      content,
+      selectionStart: selection.start,
+      selectionEnd: selection.end,
+      action,
+    });
+    setContent(formatted.nextContent);
+    setIsSaved(false);
+    setSelection({ start: formatted.nextStart, end: formatted.nextEnd });
+    requestAnimationFrame(() => {
+      bodyInputRef.current?.focus();
+    });
   };
 
-  const activeList = kind === "chapter" ? chapters : drafts;
+  const handleExportTxt = async () => {
+    if (exporting) return;
+    setExporting('txt');
+    setErrorBanner(null);
+    try {
+      await exportWritingAsTxt(title, content);
+    } catch (err) {
+      setErrorBanner(
+        err instanceof Error ? err.message : 'Falha ao exportar arquivo TXT.',
+      );
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    if (exporting) return;
+    setExporting('pdf');
+    setErrorBanner(null);
+    try {
+      const storyTitle = stories.find((s) => s.id === storyId)?.title;
+      await exportWritingAsPdf(title, content, storyTitle);
+    } catch (err) {
+      setErrorBanner(
+        err instanceof Error ? err.message : 'Falha ao exportar arquivo PDF.',
+      );
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const activeList = kind === 'chapter' ? chapters : drafts;
   const wordCount = useMemo(() => countWords(content), [content]);
   const readingMinutes = Math.max(1, Math.ceil(wordCount / 200));
 
-  const displayedContent = content;
-
-  const bgMain = isDark ? "#120e17" : "#f3ccde";
-  const bgCard = isDark ? "#1a1120" : "#fcf8f2";
-  const bgChip = isDark ? "#24172d" : "#ffffff";
-  const textMain = isDark ? "#f5f5f4" : "#1c1917";
-  const textMuted = isDark ? "#a8a29e" : "#57534e";
-  const accent = isDark ? "#9d174d" : "#4b1d3f";
+  const bgMain = isDark ? '#120e17' : '#f3ccde';
+  const bgCard = isDark ? '#1a1120' : '#fcf8f2';
+  const bgChip = isDark ? '#24172d' : '#ffffff';
+  const textMain = isDark ? '#f5f5f4' : '#1c1917';
+  const textMuted = isDark ? '#a8a29e' : '#57534e';
+  const accent = isDark ? '#9d174d' : '#4b1d3f';
 
   const lineHeight =
-    spacing === "normal"
+    spacing === 'normal'
       ? Math.round(fontSize * 1.45)
-      : spacing === "loose"
+      : spacing === 'loose'
         ? Math.round(fontSize * 2.0)
         : Math.round(fontSize * 1.7);
 
   const fontStyle =
-    font === "mono"
+    font === 'mono'
       ? {
-          fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
+          fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
         }
-      : font === "sans"
+      : font === 'sans'
         ? {
             fontFamily: Platform.select({
-              ios: "System",
-              android: "sans-serif",
+              ios: 'System',
+              android: 'sans-serif',
             }),
           }
         : {
-            fontFamily: Platform.select({ ios: "Georgia", android: "serif" }),
+            fontFamily: Platform.select({ ios: 'Georgia', android: 'serif' }),
           };
 
   const activeStoryTitle =
     stories.find((s) => s.id === storyId)?.title || `Livro (${storyId})`;
 
+  const formatButtons: {
+    action: FormattingAction;
+    label: string;
+    Icon: React.ComponentType<{ size?: number; color?: string }>;
+  }[] = [
+    { action: 'bold', label: 'Negrito', Icon: Bold },
+    { action: 'italic', label: 'Itálico', Icon: Italic },
+    { action: 'underline', label: 'Sublinhado', Icon: Underline },
+    { action: 'heading', label: 'Título', Icon: Heading2 },
+    { action: 'quote', label: 'Citação', Icon: Quote },
+    { action: 'list', label: 'Lista', Icon: List },
+  ];
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: bgMain }]}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           contentContainerStyle={styles.scroll}
@@ -560,7 +668,8 @@ export function WritingScreen({
                     Espaço de Escrita
                   </Text>
                   <Text style={[styles.subInfo, { color: textMuted }]}>
-                    {activeStoryTitle}
+                    {activeStoryTitle} · {getStatusLabel(status)} · Autor{' '}
+                    {userId}
                   </Text>
                 </View>
                 <View
@@ -568,31 +677,25 @@ export function WritingScreen({
                     styles.badge,
                     {
                       backgroundColor: saving
-                        ? "#e0e7ff"
+                        ? '#e0e7ff'
                         : isSaved
-                          ? "#dcfce7"
-                          : "#fef3c7",
+                          ? '#dcfce7'
+                          : '#fef3c7',
                     },
                   ]}
                 >
                   <Text
                     style={{
                       fontSize: 10,
-                      fontWeight: "700",
+                      fontWeight: '700',
                       color: saving
-                        ? "#3730a3"
+                        ? '#3730a3'
                         : isSaved
-                          ? "#166534"
-                          : "#92400e",
+                          ? '#166534'
+                          : '#92400e',
                     }}
                   >
-                    {hydrating
-                      ? "Carregando..."
-                      : saving
-                        ? "Salvando..."
-                        : isSaved
-                          ? "Salvo"
-                          : "Não salvo"}
+                    {saving ? 'Salvando...' : isSaved ? 'Salvo' : 'Não salvo'}
                   </Text>
                 </View>
               </View>
@@ -605,23 +708,21 @@ export function WritingScreen({
                       return (
                         <TouchableOpacity
                           key={s.id}
-                          disabled={saving || hydrating}
+                          disabled={saving}
                           style={[
                             styles.chipBtn,
                             { backgroundColor: selected ? accent : bgChip },
                           ]}
-                          onPress={() => {
-                            if (s.id !== storyId) onSelectStory(s.id);
-                          }}
+                          onPress={() => onSelectStory(s.id)}
                         >
                           <BookOpen
                             size={13}
-                            color={selected ? "#fff" : accent}
+                            color={selected ? '#fff' : accent}
                           />
                           <Text
                             style={[
                               styles.chipLabel,
-                              { color: selected ? "#fff" : textMain },
+                              { color: selected ? '#fff' : textMain },
                             ]}
                           >
                             {s.title}
@@ -633,43 +734,85 @@ export function WritingScreen({
                 </ScrollView>
               )}
 
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <View style={styles.row}>
+                  {STATUS_OPTIONS.map((st) => {
+                    const activeSt = status === st;
+                    return (
+                      <TouchableOpacity
+                        key={st}
+                        disabled={saving}
+                        style={[
+                          styles.statusChip,
+                          { backgroundColor: activeSt ? accent : bgChip },
+                        ]}
+                        onPress={() => {
+                          setStatus(st);
+                          if (st === 'draft') {
+                            setKind('draft');
+                          } else if (kind === 'draft') {
+                            setKind('chapter');
+                          }
+                          setIsSaved(false);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.statusLabel,
+                            { color: activeSt ? '#fff' : textMain },
+                          ]}
+                        >
+                          {getStatusLabel(st)}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+
               <View style={styles.row}>
                 <View style={[styles.segment, { backgroundColor: bgChip }]}>
                   <TouchableOpacity
-                    disabled={saving || hydrating}
+                    disabled={saving}
                     style={[
                       styles.segBtn,
-                      kind === "chapter" && { backgroundColor: accent },
+                      kind === 'chapter' && { backgroundColor: accent },
                     ]}
                     onPress={() => {
-                      setKind("chapter");
+                      setKind('chapter');
+                      if (status === 'draft') setStatus('in_review');
+                      setEditingId(null);
+                      setEditingVersion(undefined);
                       setIsSaved(false);
                     }}
                   >
                     <Text
                       style={[
                         styles.segLabel,
-                        { color: kind === "chapter" ? "#fff" : textMuted },
+                        { color: kind === 'chapter' ? '#fff' : textMuted },
                       ]}
                     >
                       Capítulos ({chapters.length})
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    disabled={saving || hydrating}
+                    disabled={saving}
                     style={[
                       styles.segBtn,
-                      kind === "draft" && { backgroundColor: accent },
+                      kind === 'draft' && { backgroundColor: accent },
                     ]}
                     onPress={() => {
-                      setKind("draft");
+                      setKind('draft');
+                      setStatus('draft');
+                      setEditingId(null);
+                      setEditingVersion(undefined);
                       setIsSaved(false);
                     }}
                   >
                     <Text
                       style={[
                         styles.segLabel,
-                        { color: kind === "draft" ? "#fff" : textMuted },
+                        { color: kind === 'draft' ? '#fff' : textMuted },
                       ]}
                     >
                       Rascunhos ({drafts.length})
@@ -678,7 +821,7 @@ export function WritingScreen({
                 </View>
 
                 <TouchableOpacity
-                  disabled={saving || hydrating}
+                  disabled={saving}
                   style={[styles.chipBtn, { backgroundColor: bgChip }]}
                   onPress={() => setShowList((prev) => !prev)}
                 >
@@ -689,20 +832,23 @@ export function WritingScreen({
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  disabled={saving || hydrating}
+                  disabled={saving}
                   style={[styles.chipBtn, { backgroundColor: bgChip }]}
-                  onPress={() =>
-                    confirmChange(() => {
-                      setEditingId(null);
-                      setEditingVersion(undefined);
-                      setTitle(
-                        kind === "chapter" ? "Novo Capítulo" : "Novo Rascunho",
-                      );
-                      setContent("");
-                      setIsSaved(true);
-                      void clearRecovery();
-                    })
-                  }
+                  onPress={() => {
+                    const nextKind = kind;
+                    setEditingId(null);
+                    setEditingVersion(undefined);
+                    setStatus(nextKind === 'draft' ? 'draft' : 'in_review');
+                    setTitle(
+                      nextKind === 'chapter'
+                        ? 'Novo Capítulo'
+                        : 'Novo Rascunho',
+                    );
+                    setContent('');
+                    setIsSaved(true);
+                    void clearLocalRecovery(userId, storyId);
+                    onRemoteRecoveryChangeRef.current?.(null);
+                  }}
                 >
                   <PlusCircle size={15} color={textMain} />
                 </TouchableOpacity>
@@ -711,11 +857,11 @@ export function WritingScreen({
                   style={[
                     styles.saveBtn,
                     {
-                      backgroundColor: savedToast ? "#15803d" : accent,
+                      backgroundColor: savedToast ? '#15803d' : accent,
                       opacity: saving ? 0.65 : 1,
                     },
                   ]}
-                  disabled={saving || hydrating}
+                  disabled={saving}
                   onPress={() => void handleSaveEntry(false)}
                 >
                   {savedToast ? (
@@ -727,12 +873,12 @@ export function WritingScreen({
                   )}
                   <Text style={styles.saveLabel}>
                     {saving
-                      ? "Salvando"
+                      ? 'Salvando'
                       : savedToast
-                        ? "Salvo"
+                        ? 'Salvo'
                         : editingId
-                          ? "Atualizar"
-                          : "Salvar"}
+                          ? 'Atualizar'
+                          : 'Salvar'}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -741,36 +887,32 @@ export function WritingScreen({
                 <View style={styles.listBox}>
                   {activeList.length === 0 ? (
                     <Text style={{ color: textMuted, fontSize: 12 }}>
-                      Nenhum {kind === "chapter" ? "capítulo" : "rascunho"}{" "}
+                      Nenhum {kind === 'chapter' ? 'capítulo' : 'rascunho'}{' '}
                       neste livro.
                     </Text>
                   ) : (
                     activeList.map((entry) => (
                       <TouchableOpacity
                         key={entry.id}
-                        disabled={saving || hydrating}
+                        disabled={saving}
                         style={[styles.entryItem, { backgroundColor: bgChip }]}
                         onPress={() => {
-                          if (entry.id === editingId) {
-                            setShowList(false);
-                            return;
-                          }
-                          confirmChange(() => {
-                            setEditingId(entry.id);
-                            setEditingVersion(entry.version);
-                            setTitle(entry.title);
-                            setContent(entry.content);
-                            setIsSaved(true);
-                            setShowList(false);
-                            void clearRecovery();
-                          });
+                          setEditingId(entry.id);
+                          setEditingVersion(entry.version);
+                          setKind(entry.kind);
+                          setStatus(entry.status);
+                          setTitle(entry.title);
+                          setContent(entry.content);
+                          setIsSaved(true);
+                          setShowList(false);
                         }}
                       >
                         <Text style={[styles.entryTitle, { color: textMain }]}>
                           {entry.title}
                         </Text>
                         <Text style={[styles.entryMeta, { color: textMuted }]}>
-                          v{entry.version} · {entry.wordCount} palavras
+                          {getStatusLabel(entry.status)} · v{entry.version} ·{' '}
+                          {entry.wordCount} palavras
                         </Text>
                       </TouchableOpacity>
                     ))
@@ -779,6 +921,24 @@ export function WritingScreen({
               )}
             </View>
           )}
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.row}>
+              {formatButtons.map(({ action, label, Icon }) => (
+                <TouchableOpacity
+                  key={action}
+                  disabled={saving}
+                  style={[styles.formatBtn, { backgroundColor: bgCard }]}
+                  onPress={() => handleFormat(action)}
+                >
+                  <Icon size={14} color={accent} />
+                  <Text style={[styles.formatLabel, { color: textMain }]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           <View style={styles.row}>
             <TouchableOpacity
@@ -794,9 +954,7 @@ export function WritingScreen({
             <TouchableOpacity
               style={[styles.chipBtn, { backgroundColor: bgCard }]}
               onPress={async () => {
-                await Clipboard.setStringAsync(
-                  `${title}\n\n${plainText(content)}`,
-                );
+                await Clipboard.setStringAsync(`${title}\n\n${content}`);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1800);
               }}
@@ -807,22 +965,41 @@ export function WritingScreen({
                 <Copy size={14} color={textMain} />
               )}
               <Text style={[styles.chipLabel, { color: textMain }]}>
-                {copied ? "Copiado" : "Copiar"}
+                {copied ? 'Copiado' : 'Copiar'}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.chipBtn, { backgroundColor: bgCard }]}
               onPress={() =>
-                void Share.share({
-                  title,
-                  message: `${title}\n\n${plainText(content)}`,
-                })
+                void Share.share({ title, message: `${title}\n\n${content}` })
               }
             >
               <Share2 size={14} color={textMain} />
               <Text style={[styles.chipLabel, { color: textMain }]}>
                 Compartilhar
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              disabled={Boolean(exporting)}
+              style={[styles.chipBtn, { backgroundColor: bgCard }]}
+              onPress={() => void handleExportTxt()}
+            >
+              <Download size={14} color={accent} />
+              <Text style={[styles.chipLabel, { color: textMain }]}>
+                {exporting === 'txt' ? 'TXT...' : 'TXT'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              disabled={Boolean(exporting)}
+              style={[styles.chipBtn, { backgroundColor: bgCard }]}
+              onPress={() => void handleExportPdf()}
+            >
+              <Download size={14} color={accent} />
+              <Text style={[styles.chipLabel, { color: textMain }]}>
+                {exporting === 'pdf' ? 'PDF...' : 'PDF'}
               </Text>
             </TouchableOpacity>
 
@@ -836,7 +1013,7 @@ export function WritingScreen({
                 <Maximize2 size={14} color={accent} />
               )}
               <Text style={[styles.chipLabel, { color: accent }]}>
-                {isFocus ? "Sair do Foco" : "Modo Foco"}
+                {isFocus ? 'Sair do Foco' : 'Modo Foco'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -844,7 +1021,7 @@ export function WritingScreen({
           {showTypography && (
             <View style={[styles.card, { backgroundColor: bgCard }]}>
               <View style={styles.row}>
-                {(["serif", "sans", "mono"] as const).map((f) => (
+                {(['serif', 'sans', 'mono'] as const).map((f) => (
                   <TouchableOpacity
                     key={f}
                     style={[
@@ -855,9 +1032,9 @@ export function WritingScreen({
                   >
                     <Text
                       style={{
-                        color: font === f ? "#fff" : textMain,
+                        color: font === f ? '#fff' : textMain,
                         fontSize: 12,
-                        fontWeight: "700",
+                        fontWeight: '700',
                       }}
                     >
                       {f}
@@ -873,9 +1050,9 @@ export function WritingScreen({
                 >
                   <Text
                     style={{
-                      color: indent ? "#fff" : textMain,
+                      color: indent ? '#fff' : textMain,
                       fontSize: 12,
-                      fontWeight: "700",
+                      fontWeight: '700',
                     }}
                   >
                     Recuo
@@ -894,9 +1071,9 @@ export function WritingScreen({
                   >
                     <Text
                       style={{
-                        color: fontSize === sz ? "#fff" : textMain,
+                        color: fontSize === sz ? '#fff' : textMain,
                         fontSize: 12,
-                        fontWeight: "700",
+                        fontWeight: '700',
                       }}
                     >
                       {sz}px
@@ -907,11 +1084,11 @@ export function WritingScreen({
                   style={[styles.chipBtn, { backgroundColor: bgChip }]}
                   onPress={() =>
                     setSpacing((prev) =>
-                      prev === "normal"
-                        ? "relaxed"
-                        : prev === "relaxed"
-                          ? "loose"
-                          : "normal",
+                      prev === 'normal'
+                        ? 'relaxed'
+                        : prev === 'relaxed'
+                          ? 'loose'
+                          : 'normal',
                     )
                   }
                 >
@@ -919,7 +1096,7 @@ export function WritingScreen({
                     style={{
                       color: textMain,
                       fontSize: 12,
-                      fontWeight: "700",
+                      fontWeight: '700',
                     }}
                   >
                     Espaço: {spacing}
@@ -932,7 +1109,7 @@ export function WritingScreen({
           <View style={[styles.editorCard, { backgroundColor: bgCard }]}>
             <TextInput
               value={title}
-              editable={!saving && !hydrating}
+              editable={!saving}
               onChangeText={(t) => {
                 setTitle(t);
                 setIsSaved(false);
@@ -945,19 +1122,31 @@ export function WritingScreen({
               ]}
             />
 
-            <RichTextEditor
+            <TextInput
+              ref={bodyInputRef}
               value={content}
-              disabled={saving || hydrating}
-              onChange={(html) => {
-                setContent(html);
+              editable={!saving}
+              onSelectionChange={(e: TextInputSelectionChangeEvent) =>
+                setSelection(e.nativeEvent.selection)
+              }
+              onChangeText={(txt) => {
+                setContent(txt);
                 setIsSaved(false);
               }}
-              color={textMain}
-              background={bgCard}
-              fontSize={fontSize}
-              lineHeight={lineHeight}
-              fontFamily={fontStyle.fontFamily}
-              indent={indent}
+              placeholder="Escreva aqui..."
+              placeholderTextColor={textMuted}
+              multiline
+              textAlignVertical="top"
+              style={[
+                styles.bodyInput,
+                fontStyle,
+                {
+                  color: textMain,
+                  fontSize,
+                  lineHeight,
+                  opacity: saving ? 0.7 : 1,
+                },
+              ]}
             />
 
             <View style={styles.footer}>
@@ -968,7 +1157,7 @@ export function WritingScreen({
                 </Text>
                 <Type size={14} color={accent} />
                 <Text style={{ color: textMuted, fontSize: 12 }}>
-                  {plainText(content).length} caracteres
+                  {content.length} caracteres
                 </Text>
               </View>
               <View style={styles.row}>
@@ -982,78 +1171,8 @@ export function WritingScreen({
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Portal>
-        <Dialog
-          visible={Boolean(chapterConflict)}
-          dismissable={!saving}
-          onDismiss={() => setChapterConflict(null)}
-        >
-          <Dialog.Title>Conflito de versão</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              Este capítulo mudou em outra sessão. Carregue a versão do servidor
-              ou confirme que deseja substituí-la pelo seu texto.
-            </Text>
-            {errorBanner ? <Text>{errorBanner}</Text> : null}
-          </Dialog.Content>
-          <Dialog.Actions style={{ flexWrap: "wrap" }}>
-            <Button disabled={saving} onPress={() => setChapterConflict(null)}>
-              Continuar editando
-            </Button>
-            <Button
-              disabled={saving}
-              onPress={() => {
-                if (!chapterConflict) return;
-                applyRecovery({
-                  ...chapterConflict,
-                  itemId: chapterConflict.id,
-                  sessionId: sessionIdRef.current,
-                });
-                setIsSaved(true);
-                setChapterConflict(null);
-                void clearRecovery();
-              }}
-            >
-              Carregar servidor
-            </Button>
-            <Button
-              disabled={saving}
-              loading={saving}
-              onPress={() => void handleSaveEntry(true)}
-            >
-              Sobrescrever
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-        <Dialog
-          visible={Boolean(pendingAction)}
-          onDismiss={() => setPendingAction(null)}
-        >
-          <Dialog.Title>Descartar alterações?</Dialog.Title>
-          <Dialog.Content>
-            <Text>
-              Salve o texto atual antes de abrir outro capítulo ou criar um
-              novo. Continuar descarta as alterações deste editor.
-            </Text>
-          </Dialog.Content>
-          <Dialog.Actions style={{ flexWrap: "wrap" }}>
-            <Button onPress={() => setPendingAction(null)}>Cancelar</Button>
-            <Button
-              onPress={() => {
-                const action = pendingAction;
-                setPendingAction(null);
-                action?.();
-              }}
-            >
-              Descartar e continuar
-            </Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
       <SessionConflictModal
         conflict={conflict}
-        busy={resolving}
-        error={errorBanner}
         isDark={isDark}
         onResolve={(choice) => void handleResolveConflict(choice)}
       />
@@ -1066,61 +1185,76 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { padding: 14, gap: 10 },
   errorBox: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: '#fee2e2',
     padding: 12,
     borderRadius: 14,
   },
   errorText: {
-    color: "#991b1b",
+    color: '#991b1b',
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: '700',
   },
   banner: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     padding: 12,
     borderRadius: 16,
   },
-  bannerText: { fontSize: 12, fontWeight: "600", flex: 1 },
+  bannerText: { fontSize: 12, fontWeight: '600', flex: 1 },
   card: { borderRadius: 22, padding: 14, gap: 10 },
-  topRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  heading: { fontSize: 17, fontWeight: "700" },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  heading: { fontSize: 17, fontWeight: '700' },
   subInfo: { fontSize: 11, marginTop: 1 },
   badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
-  row: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  segment: { flexDirection: "row", borderRadius: 12, padding: 3 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  statusChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  statusLabel: { fontSize: 11, fontWeight: '700' },
+  segment: { flexDirection: 'row', borderRadius: 12, padding: 3 },
   segBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9 },
-  segLabel: { fontSize: 11, fontWeight: "700" },
+  segLabel: { fontSize: 11, fontWeight: '700' },
+  formatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  formatLabel: { fontSize: 11, fontWeight: '700' },
   chipBtn: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 5,
     paddingHorizontal: 11,
     paddingVertical: 8,
     borderRadius: 12,
   },
-  chipLabel: { fontSize: 12, fontWeight: "600" },
+  chipLabel: { fontSize: 12, fontWeight: '600' },
   saveBtn: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 5,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 12,
   },
-  saveLabel: { color: "#fff", fontSize: 12, fontWeight: "700" },
+  saveLabel: { color: '#fff', fontSize: 12, fontWeight: '700' },
   listBox: { gap: 6, marginTop: 4 },
   entryItem: { padding: 10, borderRadius: 12 },
-  entryTitle: { fontSize: 13, fontWeight: "700" },
+  entryTitle: { fontSize: 13, fontWeight: '700' },
   entryMeta: { fontSize: 11, marginTop: 2 },
   editorCard: { borderRadius: 22, padding: 16, minHeight: 460, gap: 10 },
-  titleInput: { fontSize: 22, fontWeight: "700", paddingBottom: 8 },
+  titleInput: { fontSize: 22, fontWeight: '700', paddingBottom: 8 },
   bodyInput: { flex: 1, minHeight: 340 },
   footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: 10,
   },
 });
