@@ -1,3 +1,4 @@
+import { UniverseImage } from "./UniverseImage";
 import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
@@ -124,10 +125,7 @@ export function EncyclopediaView({ onSelectItem }: EncyclopediaViewProps) {
                   elevation={1}
                 >
                   {item.image ? (
-                    <Card.Cover
-                      source={{ uri: item.image }}
-                      style={styles.cardCover}
-                    />
+                    <UniverseImage uri={item.image} style={styles.cardCover} />
                   ) : null}
                   <Card.Content style={styles.cardContent}>
                     <View style={styles.cardHeader}>
@@ -309,7 +307,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   cardCover: {
-    height: 140,
+    aspectRatio: 1,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
   },

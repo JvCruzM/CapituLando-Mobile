@@ -1,4 +1,8 @@
-import type { EncyclopediaCategory, CharacterRole, TimelineImportance } from "./types";
+import type {
+  EncyclopediaCategory,
+  CharacterRole,
+  TimelineImportance,
+} from "./types";
 
 export interface CategoryMeta {
   key: EncyclopediaCategory;
@@ -60,10 +64,11 @@ export const ENCYCLOPEDIA_CATEGORIES: CategoryMeta[] = [
   },
   {
     key: "theme",
-    label: "Tema & Lore",
-    singular: "Tema / Lore / Conceito",
+    label: "Anotações",
+    singular: "Anotação",
     icon: "palette-swatch",
-    description: "Conceito central, estética, atmosfera, lore e notas de história",
+    description:
+      "Conceito central, estética, atmosfera, lore e notas de história",
     color: "#704563",
   },
 ];
@@ -77,7 +82,11 @@ export const CONCEPT_CATEGORIES = [
   "Conceito Geral",
 ] as const;
 
-export const CHARACTER_ROLES: { role: CharacterRole; color: string; icon: string }[] = [
+export const CHARACTER_ROLES: {
+  role: CharacterRole;
+  color: string;
+  icon: string;
+}[] = [
   { role: "Protagonista", color: "#2e7d32", icon: "star-circle" },
   { role: "Antagonista", color: "#c62828", icon: "skull" },
   { role: "Mentor", color: "#1565c0", icon: "school" },

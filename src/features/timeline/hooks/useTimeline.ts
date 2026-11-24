@@ -134,10 +134,18 @@ export function useTimelineWorkspace(ownerId: string, storyId: string) {
       locationsQuery.error ??
       eventCharactersQuery.error ??
       freeChronologyQuery.error,
+    retry: () =>
+      Promise.all([
+        eventsQuery.refetch(),
+        locationsQuery.refetch(),
+        eventCharactersQuery.refetch(),
+        freeChronologyQuery.refetch(),
+      ]),
     isLoading:
       eventsQuery.isLoading ||
       locationsQuery.isLoading ||
-      eventCharactersQuery.isLoading,
+      eventCharactersQuery.isLoading ||
+      freeChronologyQuery.isLoading,
     saveEvent: saveEventMutation.mutateAsync,
     removeEvent: removeEventMutation.mutateAsync,
     saveFreeNote: saveFreeNoteMutation.mutateAsync,

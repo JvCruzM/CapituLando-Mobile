@@ -1,3 +1,5 @@
+import { StableFormInput as TextInput } from "./StableFormInput";
+import { UniverseImage } from "./UniverseImage";
 import React, { useState, useEffect } from "react";
 import { Image, ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -8,7 +10,6 @@ import {
   Portal,
   SegmentedButtons,
   Text,
-  TextInput,
   useTheme,
 } from "react-native-paper";
 import type {
@@ -40,6 +41,7 @@ export type FormMode =
       mode: "create";
       targetType: "encyclopedia" | "character" | "timeline";
       defaultCategory?: EncyclopediaCategory;
+      freeChronology?: boolean;
     }
   | { mode: "edit"; targetType: "encyclopedia"; item: EncyclopediaItem }
   | { mode: "edit"; targetType: "character"; item: CharacterItem }
@@ -48,6 +50,7 @@ export type FormMode =
 
 interface CreateEditModalProps {
   formMode: FormMode;
+  nextTimelineOrder?: number;
   visible: boolean;
   races?: SelectableRecordOption[];
   organizations?: SelectableRecordOption[];
@@ -71,6 +74,7 @@ interface CreateEditModalProps {
 
 export function CreateEditModal({
   formMode,
+  nextTimelineOrder = 1,
   visible,
   races = [],
   organizations = [],
@@ -129,14 +133,22 @@ export function CreateEditModal({
   const [charPersonality, setCharPersonality] = useState("");
   const [charMotivation, setCharMotivation] = useState("");
   const [charConflict, setCharConflict] = useState("");
+  const [charNotes, setCharNotes] = useState("");
   const [charBackstory, setCharBackstory] = useState("");
   const [charTraits, setCharTraits] = useState("");
   const [charQuote, setCharQuote] = useState("");
 
+  const isFreeChronology =
+    formMode?.targetType === "timeline" &&
+    (formMode.mode === "create"
+      ? formMode.freeChronology
+      : formMode.item.id.startsWith("chronology:"));
+  const [freeCharacters, setFreeCharacters] = useState("");
+  const [freeLocation, setFreeLocation] = useState("");
   // Timeline Form Fields
   const [timeTitle, setTimeTitle] = useState("");
   const [timeEra, setTimeEra] = useState("");
-  const [timeDateOrder, setTimeDateOrder] = useState("100");
+  const [timeDateOrder, setTimeDateOrder] = useState("1");
   const [timeDateDisplay, setTimeDateDisplay] = useState("");
   const [timeImportance, setTimeImportance] =
     useState<TimelineImportance>("Maior");
@@ -170,9 +182,7 @@ export function CreateEditModal({
         setEncParentLocationId(it.parentLocationId ?? null);
         setEncHeadquartersLocationId(it.headquartersLocationId ?? null);
         setEncConceptCategory(
-          it.conceptCategory ??
-            it.attributes["Tipo de Conceito"] ??
-            "Lore/História",
+          it.conceptCategory?.replace("Lore / História", "Lore/História") ?? "",
         );
       } else {
         setEncCategory(formMode.defaultCategory ?? "races");
@@ -185,7 +195,9 @@ export function CreateEditModal({
         setEncRaceId(null);
         setEncParentLocationId(null);
         setEncHeadquartersLocationId(null);
-        setEncConceptCategory("Lore/História");
+        setEncConceptCategory(
+          formMode.defaultCategory === "theme" ? "Lore/História" : "",
+        );
       }
     } else if (formMode.targetType === "character") {
       if (formMode.mode === "edit") {
@@ -195,9 +207,7 @@ export function CreateEditModal({
         setCharRole(c.role);
         setCharRaceId(c.raceId ?? null);
         setCharOrgIds(c.organizationIds ?? []);
-        setCharAge(
-          c.age !== null && c.age !== undefined ? String(c.age) : "",
-        );
+        setCharAge(c.age !== null && c.age !== undefined ? String(c.age) : "");
         setCharHeight(c.height ?? "");
         setCharWeight(c.weight ?? "");
         setCharZodiac(c.zodiac ?? "");
@@ -216,6 +226,7 @@ export function CreateEditModal({
         setCharMotivation(c.motivation);
         setCharConflict(c.internalConflict);
         setCharBackstory(c.backstory);
+        setCharNotes(c.notes ?? "");
         setCharTraits(c.traits ? c.traits.join(", ") : "");
         setCharQuote(c.quote ?? "");
       } else {
@@ -243,6 +254,7 @@ export function CreateEditModal({
         setCharMotivation("");
         setCharConflict("");
         setCharBackstory("");
+        setCharNotes("");
         setCharTraits("");
         setCharQuote("");
       }
@@ -250,6 +262,8 @@ export function CreateEditModal({
       if (formMode.mode === "edit") {
         const t = formMode.item;
         setTimeTitle(t.title);
+        setFreeCharacters(t.charactersInvolved.join(", "));
+        setFreeLocation(t.location ?? "");
         setTimeEra(t.era);
         setTimeDateOrder(String(t.dateOrder));
         setTimeDateDisplay(t.dateDisplay);
@@ -263,8 +277,10 @@ export function CreateEditModal({
         setTimeConsequences(t.consequences ?? "");
       } else {
         setTimeTitle("");
+        setFreeCharacters("");
+        setFreeLocation("");
         setTimeEra("Era Atual");
-        setTimeDateOrder("100");
+        setTimeDateOrder(String(nextTimelineOrder));
         setTimeDateDisplay("Ano 1 da Nova Era");
         setTimeImportance("Maior");
         setTimeSummary("");
@@ -287,7 +303,9 @@ export function CreateEditModal({
       ? `${isEdit ? "Editar" : "Novo Item na"} Enciclopédia`
       : formMode.targetType === "character"
         ? `${isEdit ? "Editar" : "Novo"} Personagem`
-        : `${isEdit ? "Editar" : "Novo Evento da"} Cronologia`;
+        : isFreeChronology
+          ? `${isEdit ? "Editar" : "Novo"} marco de cronologia livre`
+          : `${isEdit ? "Editar" : "Novo"} evento`;
 
   async function handlePickImage(
     target: "character" | "event" | "encyclopedia",
@@ -325,8 +343,26 @@ export function CreateEditModal({
           setValidationError("Informe o nome do item.");
           return;
         }
-        if ([...encName.trim()].length > 100) {
-          setValidationError("O nome deve ter no máximo 100 caracteres.");
+        const maxName =
+          encCategory === "theme" ||
+          encConceptCategory ||
+          encCategory === "locations" ||
+          encCategory === "organizations"
+            ? 150
+            : encCategory === "world-rules"
+              ? 150
+              : 100;
+        if (encName.trim().length > maxName) {
+          setValidationError(
+            `O nome deve ter no máximo ${maxName} caracteres.`,
+          );
+          return;
+        }
+        if (
+          (encCategory === "theme" || encConceptCategory) &&
+          !encDescription.trim()
+        ) {
+          setValidationError("Informe a descrição do conceito.");
           return;
         }
         const selectedRace = races.find((r) => r.id === encRaceId);
@@ -358,18 +394,28 @@ export function CreateEditModal({
             image: encImage,
             raceId: encCategory === "creatures" ? encRaceId : null,
             raceName:
-              encCategory === "creatures" ? selectedRace?.name ?? null : null,
+              encCategory === "creatures" ? (selectedRace?.name ?? null) : null,
             parentLocationId:
               encCategory === "locations" ? encParentLocationId : null,
             parentLocationName:
-              encCategory === "locations" ? selectedParent?.name ?? null : null,
+              encCategory === "locations"
+                ? (selectedParent?.name ?? null)
+                : null,
             headquartersLocationId:
               encCategory === "organizations"
                 ? encHeadquartersLocationId
                 : null,
             headquartersLocationName:
-              encCategory === "organizations" ? selectedHq?.name ?? null : null,
-            conceptCategory: encConceptCategory,
+              encCategory === "organizations"
+                ? (selectedHq?.name ?? null)
+                : null,
+            conceptCategory:
+              encCategory === "theme" ||
+              (formMode.mode === "edit" &&
+                formMode.targetType === "encyclopedia" &&
+                formMode.item.id.startsWith("concept:"))
+                ? encConceptCategory
+                : undefined,
           },
           isEdit ? (formMode as { item: EncyclopediaItem }).item.id : undefined,
         );
@@ -432,6 +478,7 @@ export function CreateEditModal({
             motivation: charMotivation.trim(),
             internalConflict: charConflict.trim(),
             backstory: charBackstory.trim(),
+            notes: charNotes.trim(),
             traits,
             quote: charQuote.trim() || undefined,
           },
@@ -460,7 +507,9 @@ export function CreateEditModal({
           {
             title: timeTitle.trim(),
             era: timeEra.trim() || "Era Atual",
-            dateOrder: parseInt(timeDateOrder, 10) || 100,
+            dateOrder: Number.isFinite(Number(timeDateOrder))
+              ? Number(timeDateOrder)
+              : 1,
             dateDisplay: timeDateDisplay.trim(),
             importance: timeImportance,
             summary: timeSummary.trim(),
@@ -468,9 +517,14 @@ export function CreateEditModal({
             chapterId: timeChapterId,
             chapterTitle: selectedChapter?.title,
             locationId: timeLocationId,
-            location: selectedLocation?.name,
+            location: isFreeChronology ? freeLocation : selectedLocation?.name,
             characterIds: timeCharacterIds,
-            charactersInvolved: involvedNames,
+            charactersInvolved: isFreeChronology
+              ? freeCharacters
+                  .split(",")
+                  .map((v) => v.trim())
+                  .filter(Boolean)
+              : involvedNames,
             eventImage: timeEventImage,
             consequences: timeConsequences.trim() || undefined,
           },
@@ -504,48 +558,51 @@ export function CreateEditModal({
           >
             {formMode.targetType === "encyclopedia" && (
               <View style={styles.formSection}>
-                <Text variant="labelLarge" style={styles.fieldLabel}>
-                  Imagem da Entrada:
-                </Text>
-                {encImage ? (
-                  <View style={styles.imagePreviewBox}>
-                    <Image
-                      source={{ uri: encImage }}
-                      resizeMode="cover"
-                      style={styles.imagePreview}
-                    />
-                    <View style={styles.attrRow}>
+                {(encCategory !== "world-rules" ||
+                  Boolean(encConceptCategory)) && (
+                  <>
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Imagem da Entrada:
+                    </Text>
+                    {encImage ? (
+                      <View style={styles.imagePreviewBox}>
+                        <UniverseImage
+                          uri={encImage}
+                          style={styles.imagePreview}
+                        />
+                        <View style={styles.attrRow}>
+                          <Button
+                            mode="outlined"
+                            icon="image-edit"
+                            disabled={busy}
+                            onPress={() => void handlePickImage("encyclopedia")}
+                            style={styles.attrInput}
+                          >
+                            Trocar imagem
+                          </Button>
+                          <Button
+                            mode="text"
+                            textColor={theme.colors.error}
+                            disabled={busy}
+                            onPress={() => setEncImage(null)}
+                          >
+                            Remover
+                          </Button>
+                        </View>
+                      </View>
+                    ) : (
                       <Button
                         mode="outlined"
-                        icon="image-edit"
+                        icon="image-plus"
+                        loading={pickingImage}
                         disabled={busy}
                         onPress={() => void handlePickImage("encyclopedia")}
-                        style={styles.attrInput}
                       >
-                        Trocar imagem
+                        Selecionar imagem da entrada
                       </Button>
-                      <Button
-                        mode="text"
-                        textColor={theme.colors.error}
-                        disabled={busy}
-                        onPress={() => setEncImage(null)}
-                      >
-                        Remover
-                      </Button>
-                    </View>
-                  </View>
-                ) : (
-                  <Button
-                    mode="outlined"
-                    icon="image-plus"
-                    loading={pickingImage}
-                    disabled={busy}
-                    onPress={() => void handlePickImage("encyclopedia")}
-                  >
-                    Selecionar imagem da entrada
-                  </Button>
+                    )}
+                  </>
                 )}
-
                 <Text variant="labelLarge" style={styles.fieldLabel}>
                   Categoria da Enciclopédia:
                 </Text>
@@ -564,6 +621,9 @@ export function CreateEditModal({
                       disabled={isEdit || busy}
                       onPress={() => {
                         setEncCategory(cat.key);
+                        setEncConceptCategory(
+                          cat.key === "theme" ? "Lore/História" : "",
+                        );
                         setEncAttributes(emptyAttributes(cat.key));
                       }}
                       style={styles.categoryChip}
@@ -572,8 +632,7 @@ export function CreateEditModal({
                     </Chip>
                   ))}
                 </ScrollView>
-
-                {encCategory === "theme" && (
+                {(encCategory === "theme" || Boolean(encConceptCategory)) && (
                   <View>
                     <Text variant="labelLarge" style={styles.fieldLabel}>
                       Tipo de Conceito / Universo:
@@ -585,11 +644,9 @@ export function CreateEditModal({
                     >
                       {[
                         "Lore/História",
-                        "Tema",
                         "Regra de Magia",
                         "Local",
                         "Organização",
-                        "Conceito Geral",
                       ].map((catName) => (
                         <Chip
                           key={catName}
@@ -610,8 +667,7 @@ export function CreateEditModal({
                     </ScrollView>
                   </View>
                 )}
-
-                {encCategory === "creatures" && (
+                {encCategory === "creatures" && !encConceptCategory && (
                   <View>
                     <Text variant="labelLarge" style={styles.fieldLabel}>
                       Raça da Criatura:
@@ -644,8 +700,7 @@ export function CreateEditModal({
                     </ScrollView>
                   </View>
                 )}
-
-                {encCategory === "locations" && (
+                {encCategory === "locations" && !encConceptCategory && (
                   <View>
                     <Text variant="labelLarge" style={styles.fieldLabel}>
                       Local Pai (Hierarquia Geográfica):
@@ -685,8 +740,7 @@ export function CreateEditModal({
                     </ScrollView>
                   </View>
                 )}
-
-                {encCategory === "organizations" && (
+                {encCategory === "organizations" && !encConceptCategory && (
                   <View>
                     <Text variant="labelLarge" style={styles.fieldLabel}>
                       Sede / Quartel-General:
@@ -719,7 +773,6 @@ export function CreateEditModal({
                     </ScrollView>
                   </View>
                 )}
-
                 <TextInput
                   mode="outlined"
                   label="Nome da Entrada *"
@@ -730,7 +783,6 @@ export function CreateEditModal({
                   placeholder="Ex: Sylfos Celestiais, Astrolábio..."
                   style={styles.input}
                 />
-
                 <TextInput
                   mode="outlined"
                   label="Descrição & Lore Completo"
@@ -743,28 +795,29 @@ export function CreateEditModal({
                   placeholder="Escreva a história, funcionamento e detalhes..."
                   style={styles.input}
                 />
-
                 <Text variant="labelLarge" style={styles.fieldLabel}>
                   Atributos e características:
                 </Text>
-                {Object.entries(encAttributes).map(([label, value]) => (
-                  <TextInput
-                    key={label}
-                    mode="outlined"
-                    label={label}
-                    accessibilityLabel={label}
-                    value={value}
-                    multiline
-                    disabled={busy}
-                    onChangeText={(next) =>
-                      setEncAttributes((current) => ({
-                        ...current,
-                        [label]: next,
-                      }))
-                    }
-                    style={styles.input}
-                  />
-                ))}
+                {Object.entries(encAttributes)
+                  .filter(([label]) => label !== "Tipo de Conceito")
+                  .map(([label, value]) => (
+                    <TextInput
+                      key={label}
+                      mode="outlined"
+                      label={label}
+                      accessibilityLabel={label}
+                      value={value}
+                      multiline
+                      disabled={busy}
+                      onChangeText={(next) =>
+                        setEncAttributes((current) => ({
+                          ...current,
+                          [label]: next,
+                        }))
+                      }
+                      style={styles.input}
+                    />
+                  ))}
               </View>
             )}
 
@@ -775,9 +828,10 @@ export function CreateEditModal({
                 </Text>
                 {charImage ? (
                   <View style={styles.imagePreviewBox}>
-                    <Image
-                      source={{ uri: charImage }}
-                      resizeMode={charImageFit}
+                    <UniverseImage
+                      uri={charImage}
+                      fit={charImageFit}
+                      position={charImagePosition}
                       style={styles.imagePreview}
                     />
                     <View style={styles.attrRow}>
@@ -806,8 +860,8 @@ export function CreateEditModal({
                         setCharImageFit(v as CharacterImageFit)
                       }
                       buttons={[
-                        { value: "cover", label: "Preencher (Cover)" },
-                        { value: "contain", label: "Inteira (Contain)" },
+                        { value: "cover", label: "Preencher" },
+                        { value: "contain", label: "Imagem inteira" },
                       ]}
                       density="small"
                     />
@@ -911,7 +965,9 @@ export function CreateEditModal({
                           icon="bank"
                           selected={charOrgIds.includes(org.id)}
                           onPress={() =>
-                            setCharOrgIds((current) => toggleId(current, org.id))
+                            setCharOrgIds((current) =>
+                              toggleId(current, org.id),
+                            )
                           }
                           style={styles.categoryChip}
                         >
@@ -988,6 +1044,14 @@ export function CreateEditModal({
                   placeholder="O que move este personagem?"
                   style={styles.input}
                 />
+                <TextInput
+                  mode="outlined"
+                  label="Notas"
+                  multiline
+                  value={charNotes}
+                  onChangeText={setCharNotes}
+                  style={styles.input}
+                />
 
                 <TextInput
                   mode="outlined"
@@ -1062,48 +1126,50 @@ export function CreateEditModal({
 
             {formMode.targetType === "timeline" && (
               <View style={styles.formSection}>
-                <Text variant="labelLarge" style={styles.fieldLabel}>
-                  Imagem do Evento:
-                </Text>
-                {timeEventImage ? (
-                  <View style={styles.imagePreviewBox}>
-                    <Image
-                      source={{ uri: timeEventImage }}
-                      resizeMode="cover"
-                      style={styles.imagePreview}
-                    />
-                    <View style={styles.attrRow}>
+                {!isFreeChronology && (
+                  <>
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Imagem do Evento:
+                    </Text>
+                    {timeEventImage ? (
+                      <View style={styles.imagePreviewBox}>
+                        <UniverseImage
+                          uri={timeEventImage}
+                          style={styles.imagePreview}
+                        />
+                        <View style={styles.attrRow}>
+                          <Button
+                            mode="outlined"
+                            icon="image-edit"
+                            disabled={busy}
+                            onPress={() => void handlePickImage("event")}
+                            style={styles.attrInput}
+                          >
+                            Trocar imagem
+                          </Button>
+                          <Button
+                            mode="text"
+                            textColor={theme.colors.error}
+                            disabled={busy}
+                            onPress={() => setTimeEventImage(null)}
+                          >
+                            Remover
+                          </Button>
+                        </View>
+                      </View>
+                    ) : (
                       <Button
                         mode="outlined"
-                        icon="image-edit"
+                        icon="image-plus"
+                        loading={pickingImage}
                         disabled={busy}
                         onPress={() => void handlePickImage("event")}
-                        style={styles.attrInput}
                       >
-                        Trocar imagem
+                        Selecionar imagem do evento
                       </Button>
-                      <Button
-                        mode="text"
-                        textColor={theme.colors.error}
-                        disabled={busy}
-                        onPress={() => setTimeEventImage(null)}
-                      >
-                        Remover
-                      </Button>
-                    </View>
-                  </View>
-                ) : (
-                  <Button
-                    mode="outlined"
-                    icon="image-plus"
-                    loading={pickingImage}
-                    disabled={busy}
-                    onPress={() => void handlePickImage("event")}
-                  >
-                    Selecionar imagem do evento
-                  </Button>
+                    )}
+                  </>
                 )}
-
                 <TextInput
                   mode="outlined"
                   label="Título do Evento *"
@@ -1112,7 +1178,6 @@ export function CreateEditModal({
                   placeholder="Ex: A Noite da Cinza Silenciosa"
                   style={styles.input}
                 />
-
                 <View style={styles.attrRow}>
                   <TextInput
                     mode="outlined"
@@ -1124,15 +1189,18 @@ export function CreateEditModal({
                   />
                   <TextInput
                     mode="outlined"
-                    label="Ordem na Timeline"
+                    label="Posição na sequência"
                     keyboardType="numeric"
                     value={timeDateOrder}
                     onChangeText={setTimeDateOrder}
-                    placeholder="Ex: 100"
+                    placeholder="Ex: 1"
                     style={{ width: 130 }}
                   />
                 </View>
-
+                <Text variant="bodySmall">
+                  A posição define a sequência dos eventos: números menores
+                  aparecem primeiro. A data pode ser um texto livre.
+                </Text>
                 <TextInput
                   mode="outlined"
                   label="Descrição Histórica Detalhada"
@@ -1143,91 +1211,109 @@ export function CreateEditModal({
                   placeholder="Como o fato ocorreu, quem liderou e o que houve..."
                   style={styles.input}
                 />
-
-                <Text variant="labelLarge" style={styles.fieldLabel}>
-                  Capítulo Relacionado (selecione):
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryScroll}
-                >
-                  <Chip
-                    selected={timeChapterId === null}
-                    onPress={() => setTimeChapterId(null)}
-                    style={styles.categoryChip}
-                  >
-                    Nenhum (Cronologia livre)
-                  </Chip>
-                  {chapters.map((ch) => (
-                    <Chip
-                      key={ch.id}
-                      icon="book-open-variant"
-                      selected={timeChapterId === ch.id}
-                      onPress={() => setTimeChapterId(ch.id)}
-                      style={styles.categoryChip}
-                    >
-                      {ch.title}
-                    </Chip>
-                  ))}
-                </ScrollView>
-
-                <Text variant="labelLarge" style={styles.fieldLabel}>
-                  Local do Evento (selecione):
-                </Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryScroll}
-                >
-                  <Chip
-                    selected={timeLocationId === null}
-                    onPress={() => setTimeLocationId(null)}
-                    style={styles.categoryChip}
-                  >
-                    Sem local
-                  </Chip>
-                  {locations.map((loc) => (
-                    <Chip
-                      key={loc.id}
-                      icon="map-marker"
-                      selected={timeLocationId === loc.id}
-                      onPress={() => setTimeLocationId(loc.id)}
-                      style={styles.categoryChip}
-                    >
-                      {loc.name}
-                    </Chip>
-                  ))}
-                </ScrollView>
-
-                {characters.length > 0 ? (
+                {isFreeChronology ? (
+                  <>
+                    <TextInput
+                      mode="outlined"
+                      label="Local"
+                      value={freeLocation}
+                      onChangeText={setFreeLocation}
+                    />
+                    <TextInput
+                      mode="outlined"
+                      label="Personagens (separados por vírgula)"
+                      value={freeCharacters}
+                      onChangeText={setFreeCharacters}
+                    />
+                  </>
+                ) : (
                   <>
                     <Text variant="labelLarge" style={styles.fieldLabel}>
-                      Personagens Participantes (selecione):
+                      Capítulo Relacionado (selecione):
                     </Text>
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
                       contentContainerStyle={styles.categoryScroll}
                     >
-                      {characters.map((char) => (
+                      <Chip
+                        selected={timeChapterId === null}
+                        onPress={() => setTimeChapterId(null)}
+                        style={styles.categoryChip}
+                      >
+                        Nenhum (Cronologia livre)
+                      </Chip>
+                      {chapters.map((ch) => (
                         <Chip
-                          key={char.id}
-                          icon="account"
-                          selected={timeCharacterIds.includes(char.id)}
-                          onPress={() =>
-                            setTimeCharacterIds((current) =>
-                              toggleId(current, char.id),
-                            )
-                          }
+                          key={ch.id}
+                          icon="book-open-variant"
+                          selected={timeChapterId === ch.id}
+                          onPress={() => setTimeChapterId(ch.id)}
                           style={styles.categoryChip}
                         >
-                          {char.name}
+                          {ch.title}
                         </Chip>
                       ))}
                     </ScrollView>
+
+                    <Text variant="labelLarge" style={styles.fieldLabel}>
+                      Local do Evento (selecione):
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoryScroll}
+                    >
+                      <Chip
+                        selected={timeLocationId === null}
+                        onPress={() => setTimeLocationId(null)}
+                        style={styles.categoryChip}
+                      >
+                        Sem local
+                      </Chip>
+                      {locations.map((loc) => (
+                        <Chip
+                          key={loc.id}
+                          icon="map-marker"
+                          selected={timeLocationId === loc.id}
+                          onPress={() => setTimeLocationId(loc.id)}
+                          style={styles.categoryChip}
+                        >
+                          {loc.name}
+                        </Chip>
+                      ))}
+                    </ScrollView>
+
+                    {characters.length > 0 ? (
+                      <>
+                        <Text variant="labelLarge" style={styles.fieldLabel}>
+                          Personagens Participantes (selecione):
+                        </Text>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={styles.categoryScroll}
+                        >
+                          {characters.map((char) => (
+                            <Chip
+                              key={char.id}
+                              icon="account"
+                              selected={timeCharacterIds.includes(char.id)}
+                              onPress={() =>
+                                setTimeCharacterIds((current) =>
+                                  toggleId(current, char.id),
+                                )
+                              }
+                              style={styles.categoryChip}
+                            >
+                              {char.name}
+                            </Chip>
+                          ))}
+                        </ScrollView>
+                      </>
+                    ) : null}
                   </>
-                ) : null}
+                )}
               </View>
             )}
 
@@ -1295,7 +1381,7 @@ const styles = StyleSheet.create({
   },
   imagePreview: {
     width: "100%",
-    height: 160,
+    aspectRatio: 1,
     borderRadius: 12,
   },
   input: {

@@ -46,6 +46,7 @@ function clean(value: string) {
   return doc.body.innerHTML;
 }
 export function RichTextEditor({
+  command,
   value,
   onChange,
   disabled,
@@ -58,6 +59,39 @@ export function RichTextEditor({
 }: EditorProps) {
   const ref = useRef<HTMLDivElement>(null);
   const latest = useRef(value);
+  const savedRange = useRef<Range | null>(null);
+  useEffect(() => {
+    const remember = () => {
+      const selection = window.getSelection();
+      if (selection?.rangeCount && ref.current?.contains(selection.anchorNode))
+        savedRange.current = selection.getRangeAt(0).cloneRange();
+    };
+    document.addEventListener("selectionchange", remember);
+    return () => document.removeEventListener("selectionchange", remember);
+  }, []);
+  useEffect(() => {
+    if (!command || disabled || !ref.current) return;
+    const editor = ref.current;
+    editor.focus();
+    const range = savedRange.current;
+    if (range && editor.contains(range.commonAncestorContainer)) {
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    const commands = {
+      bold: ["bold"],
+      italic: ["italic"],
+      underline: ["underline"],
+      heading: ["formatBlock", "h2"],
+      quote: ["formatBlock", "blockquote"],
+      list: ["insertUnorderedList"],
+    };
+    const args = commands[command.action];
+    document.execCommand(args[0]!, false, args[1]);
+    latest.current = editor.innerHTML;
+    onChange(editor.innerHTML);
+  }, [command?.id]);
   useEffect(() => {
     if (ref.current && value !== latest.current) {
       ref.current.innerHTML = clean(value);

@@ -67,6 +67,7 @@ export interface CharacterItem {
   motivation: string;
   internalConflict: string;
   backstory: string;
+  notes?: string;
   traits: string[];
   quote?: string;
   createdAt: string;

@@ -61,6 +61,8 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
   const client = useQueryClient();
   const [selectedStory, setSelectedStory] = useState("");
   const [detail, setDetail] = useState<Target | null>(null);
+  const [timelineMode, setTimelineMode] = useState<"free" | "linked">("free");
+  const [creatingFree, setCreatingFree] = useState(false);
   const [form, setForm] = useState<FormMode>(null);
   const [deleting, setDeleting] = useState<DeleteTarget>(null);
   const [relationsCharacterId, setRelationsCharacterId] = useState<
@@ -125,7 +127,9 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
       } else if (target.kind === "character") {
         await charactersWorkspace.removeCharacter(target.id);
       } else if (target.kind === "timeline") {
-        await timelineWorkspace.removeEvent(target.id);
+        if (target.id.startsWith("chronology:"))
+          await timelineWorkspace.removeFreeNote(target.id.slice(11));
+        else await timelineWorkspace.removeEvent(target.id);
       }
     },
     async onSuccess() {
@@ -164,6 +168,26 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         </Button>
       </Screen>
     );
+  if (
+    charactersWorkspace.error ||
+    timelineWorkspace.error ||
+    charactersWorkspace.isLoading ||
+    timelineWorkspace.isLoading
+  )
+    return (
+      <AccountQueryStatus
+        error={charactersWorkspace.error ?? timelineWorkspace.error}
+        fetchStatus={
+          charactersWorkspace.isLoading || timelineWorkspace.isLoading
+            ? "fetching"
+            : "idle"
+        }
+        retry={() => {
+          void charactersWorkspace.retry();
+          void timelineWorkspace.retry();
+        }}
+      />
+    );
   if (!snapshot.data || snapshotKey !== currentKey)
     return (
       <AccountQueryStatus
@@ -177,13 +201,11 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
     selectedCategory === "all" ||
     editableCategories.some((category) => category === selectedCategory);
 
-  const isLegacyTimelineEvent = (id: string) => id.startsWith("chronology:");
-
   const canEditTarget = (target: Target | null) => {
     if (!target) return false;
     if (target.type === "encyclopedia") return canEditEntry(target.data);
     if (target.type === "character") return true;
-    if (target.type === "timeline") return !isLegacyTimelineEvent(target.data.id);
+    if (target.type === "timeline") return true;
     return false;
   };
 
@@ -230,6 +252,8 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         disabled={busy || snapshot.isFetching}
         loading={snapshot.isFetching}
         onPress={() => {
+          void charactersWorkspace.retry();
+          void timelineWorkspace.retry();
           void client.invalidateQueries({ queryKey: storiesKey(ownerId) });
           void client.invalidateQueries({
             queryKey: universeKey(ownerId, storyId),
@@ -305,16 +329,20 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
         <Button
           mode="contained-tonal"
           icon="timeline-plus"
-          accessibilityLabel="Novo Evento ou Marco Cronológico"
+          accessibilityLabel="Novo evento"
           disabled={busy}
           onPress={() => {
+            setCreatingFree(timelineMode === "free");
             setForm({
               mode: "create",
               targetType: "timeline",
+              freeChronology: timelineMode === "free",
             });
           }}
         >
-          Novo Evento / Cronologia
+          {timelineMode === "free"
+            ? "Novo marco de cronologia livre"
+            : "Novo evento"}
         </Button>
       ) : null}
 
@@ -330,6 +358,8 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
       ) : null}
       {activeTab === "timeline" ? (
         <TimelineView
+          mode={timelineMode}
+          onModeChange={setTimelineMode}
           onSelectEvent={(data) => setDetail({ type: "timeline", data })}
         />
       ) : null}
@@ -416,20 +446,39 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
 
       <CreateEditModal
         formMode={form}
+        nextTimelineOrder={
+          Math.max(
+            0,
+            ...snapshot.data.timelineEvents
+              .filter((e) => e.id.startsWith("chronology:") === creatingFree)
+              .map((e) => e.dateOrder),
+          ) + 1
+        }
         visible={Boolean(form)}
         races={charactersWorkspace.races}
         organizations={charactersWorkspace.organizations}
         locations={timelineWorkspace.locations}
         chapters={snapshot.data.chapters}
         characters={charactersWorkspace.characters}
-        onDismiss={() => setForm(null)}
+        onDismiss={() => {
+          setForm(null);
+          setCreatingFree(false);
+        }}
         onSaveEncyclopedia={async (item, id) => {
           await save.mutateAsync({ item, id });
         }}
         onSaveCharacter={async (item, id) => {
-          const saved = await charactersWorkspace.saveCharacter({
+          const existing = id
+            ? charactersWorkspace.characters.find((c) => c.id === id)
+            : undefined;
+          if (id && !existing)
+            throw new Error("Personagem não encontrado. Atualize os dados.");
+          await charactersWorkspace.saveCharacter({
             characterId: id,
             payload: {
+              ...existing,
+              organizationIds: item.organizationIds ?? [],
+              notes: item.notes || null,
               name: item.name,
               raceId: item.raceId ?? null,
               role: item.role,
@@ -452,31 +501,22 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
               motto: item.quote || null,
             },
           });
-
-          const selectedOrgIds = new Set(item.organizationIds ?? []);
-          const existingLinks =
-            charactersWorkspace.characterOrganizations.filter(
-              (link) => link.characterId === saved.id,
-            );
-          for (const link of existingLinks) {
-            if (!selectedOrgIds.has(link.organizationId)) {
-              await charactersWorkspace.removeOrganizationLink(link.id);
-            }
-          }
-          for (const orgId of selectedOrgIds) {
-            const alreadyLinked = existingLinks.some(
-              (link) => link.organizationId === orgId,
-            );
-            if (!alreadyLinked) {
-              await charactersWorkspace.addOrganizationLink({
-                characterId: saved.id,
-                organizationId: orgId,
-                isActive: true,
-              });
-            }
-          }
         }}
         onSaveTimeline={async (item, id) => {
+          if (creatingFree || id?.startsWith("chronology:")) {
+            await timelineWorkspace.saveFreeNote({
+              entryId: id?.slice(11),
+              payload: {
+                title: item.title,
+                eraLabel: item.dateDisplay,
+                content: item.description || item.summary,
+                order: item.dateOrder,
+                characters: item.charactersInvolved.join(", "),
+                location: item.location,
+              },
+            });
+            return;
+          }
           await timelineWorkspace.saveEvent({
             eventId: id,
             payload: {

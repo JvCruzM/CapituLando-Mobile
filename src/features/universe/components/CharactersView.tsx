@@ -1,3 +1,4 @@
+import { UniverseImage } from "./UniverseImage";
 import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
@@ -121,6 +122,17 @@ export function CharactersView({ onSelectCharacter }: CharactersViewProps) {
                   ]}
                   elevation={1}
                 >
+                  {char.characterImage ? (
+                    <UniverseImage
+                      uri={char.characterImage}
+                      fit={char.imageFit}
+                      position={char.imagePosition}
+                      style={{
+                        borderTopLeftRadius: 14,
+                        borderTopRightRadius: 14,
+                      }}
+                    />
+                  ) : null}
                   <Card.Content style={styles.cardContent}>
                     <View style={styles.cardHeader}>
                       <Surface

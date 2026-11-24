@@ -1,3 +1,4 @@
+import { useAuthStore } from "../../auth/session";
 import { accountRequest } from "../../../shared/api/account";
 import type {
   EncyclopediaCategory,
@@ -51,8 +52,8 @@ export const categoryFields: Record<
   },
   items: { type: "Tipo", appearance: "Aparência", origin: "Origem" },
   locations: { type: "Tipo", climate: "Clima", region: "Região" },
-  organizations: { type: "Tipo", leader: "Líder", philosophy: "Filosofia" },
-  "world-rules": { category: "Categoria", scope: "Âmbito", cost: "Custo" },
+  organizations: { type: "Tipo" },
+  "world-rules": { category: "Categoria" },
   theme: { category: "Tipo de Conceito", region: "Região", notes: "Notas" },
 };
 export function emptyAttributes(category: EncyclopediaCategory) {
@@ -71,23 +72,23 @@ function extractImage(row: Row): string | null {
   return (
     text(
       row.image ??
-      row.imageUrl ??
-      row.image_url ??
-      row.raceImage ??
-      row.race_image ??
-      row.creatureImage ??
-      row.creature_image ??
-      row.itemImage ??
-      row.item_image ??
-      row.locationImage ??
-      row.location_image ??
-      row.organizationImage ??
-      row.organization_image ??
-      row.conceptImage ??
-      row.concept_image ??
-      row.photo ??
-      row.coverImage ??
-      row.cover_image,
+        row.imageUrl ??
+        row.image_url ??
+        row.raceImage ??
+        row.race_image ??
+        row.creatureImage ??
+        row.creature_image ??
+        row.itemImage ??
+        row.item_image ??
+        row.locationImage ??
+        row.location_image ??
+        row.organizationImage ??
+        row.organization_image ??
+        row.conceptImage ??
+        row.concept_image ??
+        row.photo ??
+        row.coverImage ??
+        row.cover_image,
     ) || null
   );
 }
@@ -169,9 +170,9 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
     const parentLocationId =
       text(
         row.parent_location_id ??
-        row.parentLocationId ??
-        row.parent_id ??
-        row.parentId,
+          row.parentLocationId ??
+          row.parent_id ??
+          row.parentId,
       ) || null;
     const parentLocationName =
       (parentLocationId && locationNames.get(parentLocationId)) || null;
@@ -192,20 +193,17 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
     const headquartersLocationId =
       text(
         row.headquarters_location_id ??
-        row.headquartersLocationId ??
-        row.headquarters_id ??
-        row.headquartersId ??
-        row.location_id ??
-        row.locationId,
+          row.headquartersLocationId ??
+          row.headquarters_id ??
+          row.headquartersId ??
+          row.location_id ??
+          row.locationId,
       ) || null;
     const headquartersLocationName =
-      (headquartersLocationId &&
-        locationNames.get(headquartersLocationId)) ||
+      (headquartersLocationId && locationNames.get(headquartersLocationId)) ||
       null;
     const attributes = {
       Tipo: text(row.type),
-      Líder: text(row.leader),
-      Filosofia: text(row.philosophy),
     };
     encyclopediaItems.push(
       entry(row, "organizations", attributes, true, {
@@ -218,8 +216,6 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
   for (const row of rows("world_rules")) {
     const attributes = {
       Categoria: text(row.category),
-      Âmbito: text(row.scope),
-      Custo: text(row.cost),
     };
     encyclopediaItems.push(entry(row, "world-rules", attributes, true));
   }
@@ -245,9 +241,9 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
     const headquartersLocationId =
       text(
         row.headquarters_location_id ??
-        row.headquartersLocationId ??
-        row.location_id ??
-        row.locationId,
+          row.headquartersLocationId ??
+          row.location_id ??
+          row.locationId,
       ) || null;
 
     encyclopediaItems.push(
@@ -328,6 +324,7 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
       motivation: text(row.motivation),
       internalConflict: "",
       backstory: text(row.background),
+      notes: text(row.notes),
       traits: [],
       quote: text(row.motto),
       ...stamp(row),
@@ -340,8 +337,7 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
   const chapters: UniverseChapterOption[] = rows("chapters").map((row) => ({
     id: text(row.id),
     title: text(row.title) || "Capítulo sem título",
-    orderIndex:
-      typeof row.order_index === "number" ? row.order_index : null,
+    orderIndex: typeof row.order_index === "number" ? row.order_index : null,
   }));
   const chapterNames = new Map(chapters.map((ch) => [ch.id, ch.title]));
 
@@ -377,17 +373,21 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
       ...stamp(row),
     };
   });
-  for (const row of rows("chronology"))
+  for (const [index, row] of rows("chronology").entries())
     timelineEvents.push({
       id: `chronology:${row.id}`,
       title: text(row.title),
       era: "Cronologia livre",
-      dateOrder: 0,
+      dateOrder: typeof row.order === "number" ? row.order : index + 1,
       dateDisplay: text(row.yearOrDate),
+      location: text(row.location),
       importance: "Maior",
       summary: text(row.description),
       description: text(row.description),
-      charactersInvolved: text(row.characters) ? [text(row.characters)] : [],
+      charactersInvolved: text(row.characters)
+        .split(",")
+        .map((v) => v.trim())
+        .filter(Boolean),
       ...stamp(row),
     });
   return { encyclopediaItems, characters, timelineEvents, chapters };
@@ -405,158 +405,112 @@ export function canEditEntry(item: EncyclopediaItem) {
   return item.editable !== false;
 }
 
+interface ConceptDocument {
+  revision: number;
+  value: Row[];
+}
+async function changeConcept(
+  storyId: string,
+  item:
+    | EncyclopediaItem
+    | Omit<EncyclopediaItem, "id" | "createdAt" | "updatedAt">,
+  original?: EncyclopediaItem,
+  remove = false,
+) {
+  const version = useAuthStore.getState().sessionVersion;
+  const doc = await accountRequest<ConceptDocument>({
+    url: "/api/workspace/concepts",
+  });
+  if (version !== useAuthStore.getState().sessionVersion)
+    throw new Error("A sessão mudou. Abra a enciclopédia novamente.");
+  const id = original?.id.replace(/^(concept|note):/, "");
+  const existing = id
+    ? doc.value.find((row) => row.id === id && row.projectId === storyId)
+    : undefined;
+  if (id && !existing)
+    throw new Error(
+      "Conceito não encontrado nesta história. Atualize os dados.",
+    );
+  const rawCategory =
+    item.conceptCategory ||
+    item.attributes["Tipo de Conceito"] ||
+    "Lore / História";
+  const category =
+    rawCategory === "Lore/História" ? "Lore / História" : rawCategory;
+  const entry: Row = {
+    ...existing,
+    id:
+      id ?? "mobile_" + Date.now() + "_" + Math.random().toString(36).slice(2),
+    projectId: storyId,
+    title: item.name,
+    category,
+    description: item.description,
+    region: item.attributes["Região"] ?? "",
+    notes: item.attributes["Notas"] ?? "",
+    imageUrl: item.image ?? "",
+  };
+  const value = remove
+    ? doc.value.filter((row) => !(row.id === id && row.projectId === storyId))
+    : id
+      ? doc.value.map((row) => (row === existing ? entry : row))
+      : [...doc.value, entry];
+  await accountRequest({
+    url: "/api/workspace/concepts",
+    method: "PUT",
+    data: { revision: doc.revision, value },
+  });
+}
 export async function saveEncyclopedia(
   storyId: string,
   item: Omit<EncyclopediaItem, "id" | "createdAt" | "updatedAt">,
   original?: EncyclopediaItem,
 ) {
-  const isConcept =
-    Boolean(original?.id?.startsWith("concept:")) ||
-    Boolean(original?.id?.startsWith("note:")) ||
+  if (
+    original?.id.startsWith("concept:") ||
+    original?.id.startsWith("note:") ||
     item.category === "theme" ||
-    Boolean(item.conceptCategory);
-
-  const conceptId = original?.id
-    ? original.id.replace(/^(concept|note):/, "")
-    : undefined;
-
-  const data: Row = {
-    name: item.name,
-    title: item.name,
-    description: item.description,
+    item.conceptCategory
+  )
+    return changeConcept(storyId, item, original);
+  const data: Row = { description: item.description };
+  data[item.category === "world-rules" ? "title" : "name"] = item.name;
+  for (const [field, label] of Object.entries(categoryFields[item.category]))
+    data[field] = item.attributes[label] || null;
+  const imageFields: Record<string, string> = {
+    races: "raceImage",
+    creatures: "creatureImage",
+    items: "itemImage",
+    locations: "locationImage",
+    organizations: "organizationImage",
   };
-
-  const fields = categoryFields[item.category] ?? {};
-  for (const [field, label] of Object.entries(fields)) {
-    if (item.attributes[label] !== undefined) {
-      data[field] = item.attributes[label] ?? null;
-    }
-  }
-
-  const chosenImage = item.image ?? null;
-  data.image = chosenImage;
-  data.imageUrl = chosenImage;
-  data.image_url = chosenImage;
-
-  if (item.category === "races") {
-    data.raceImage = chosenImage;
-    data.race_image = chosenImage;
-  } else if (item.category === "creatures") {
-    data.creatureImage = chosenImage;
-    data.creature_image = chosenImage;
-    data.raceId = item.raceId ?? null;
-    data.race_id = item.raceId ?? null;
-  } else if (item.category === "items") {
-    data.itemImage = chosenImage;
-    data.item_image = chosenImage;
-  } else if (item.category === "locations") {
-    data.locationImage = chosenImage;
-    data.location_image = chosenImage;
+  const imageField = imageFields[item.category];
+  if (imageField) data[imageField] = item.image ?? null;
+  if (item.category === "creatures") data.raceId = item.raceId ?? null;
+  if (item.category === "locations")
     data.parentLocationId = item.parentLocationId ?? null;
-    data.parent_location_id = item.parentLocationId ?? null;
-  } else if (item.category === "organizations") {
-    data.organizationImage = chosenImage;
-    data.organization_image = chosenImage;
+  if (item.category === "organizations")
     data.headquartersLocationId = item.headquartersLocationId ?? null;
-    data.headquarters_location_id = item.headquartersLocationId ?? null;
-    data.locationId = item.headquartersLocationId ?? null;
-  }
-
-  if (isConcept) {
-    const rawCategory =
-      item.conceptCategory ||
-      item.attributes["Tipo de Conceito"] ||
-      (item.category === "locations"
-        ? "Local"
-        : item.category === "organizations"
-          ? "Organização"
-          : item.category === "world-rules"
-            ? "Regra de Magia"
-            : "Lore/História");
-    data.category = rawCategory;
-    data.region = item.attributes["Região"] ?? null;
-    data.notes = item.attributes["Notas"] ?? null;
-    data.conceptImage = chosenImage;
-
-    const url = `/api/stories/${storyId}/concepts${conceptId ? `/${conceptId}` : ""}`;
-    try {
-      await accountRequest({
-        url,
-        method: conceptId ? "PUT" : "POST",
-        data,
-      });
-      return;
-    } catch (cause) {
-      if (!conceptId && item.category !== "theme") {
-        await accountRequest({
-          url: `/api/stories/${storyId}/${item.category === "world-rules" ? "world-rules" : item.category}`,
-          method: "POST",
-          data,
-        });
-        return;
-      }
-      throw cause;
-    }
-  }
-
-  const endpoint =
-    item.category === "world-rules" ? "world-rules" : item.category;
-  try {
-    await accountRequest({
-      url: `/api/stories/${storyId}/${endpoint}${original ? `/${original.id}` : ""}`,
-      method: original ? "PUT" : "POST",
-      data,
-    });
-  } catch (err: unknown) {
-    if (item.category === "world-rules") {
-      await accountRequest({
-        url: `/api/stories/${storyId}/world_rules${original ? `/${original.id}` : ""}`,
-        method: original ? "PUT" : "POST",
-        data,
-      });
-      return;
-    }
-    throw err;
-  }
+  await accountRequest({
+    url:
+      "/api/stories/" +
+      storyId +
+      "/" +
+      item.category +
+      (original ? "/" + original.id : ""),
+    method: original ? "PUT" : "POST",
+    data,
+  });
 }
-
 export async function deleteEncyclopedia(
   storyId: string,
   item: EncyclopediaItem,
 ) {
   if (!canEditEntry(item))
-    throw new Error("A exclusão desta categoria ainda não está disponível.");
-
-  if (item.id.startsWith("concept:")) {
-    const conceptId = item.id.replace(/^concept:/, "");
-    return accountRequest({
-      url: `/api/stories/${storyId}/concepts/${conceptId}`,
-      method: "DELETE",
-    });
-  }
-
-  if (item.id.startsWith("note:")) {
-    const noteId = item.id.replace(/^note:/, "");
-    return accountRequest({
-      url: `/api/stories/${storyId}/universe-notes/${noteId}`,
-      method: "DELETE",
-    });
-  }
-
-  const endpoint =
-    item.category === "world-rules" ? "world-rules" : item.category;
-  try {
-    return await accountRequest({
-      url: `/api/stories/${storyId}/${endpoint}/${item.id}`,
-      method: "DELETE",
-    });
-  } catch (err: unknown) {
-    if (item.category === "world-rules") {
-      return await accountRequest({
-        url: `/api/stories/${storyId}/world_rules/${item.id}`,
-        method: "DELETE",
-      });
-    }
-    throw err;
-  }
+    throw new Error("Esta entrada não pode ser excluída.");
+  if (item.id.startsWith("concept:") || item.id.startsWith("note:"))
+    return changeConcept(storyId, item, item, true);
+  return accountRequest({
+    url: "/api/stories/" + storyId + "/" + item.category + "/" + item.id,
+    method: "DELETE",
+  });
 }

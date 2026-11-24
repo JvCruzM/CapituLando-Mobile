@@ -56,6 +56,12 @@ export function RichTextEditor(props: EditorProps) {
     props.fontFamily,
     props.indent,
   ]);
+  useEffect(() => {
+    if (ready.current && props.command)
+      ref.current?.injectJavaScript(
+        "window.formatEditor(" + encoded(props.command.action) + ");true;",
+      );
+  }, [props.command?.id]);
   const source = useRef({
     html: `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-editor'; style-src 'unsafe-inline'; img-src 'none'"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><style>body{margin:0;padding:12px;overflow-wrap:anywhere}#editor{min-height:350px;outline:none;white-space:pre-wrap}p{margin:0 0 .5em}</style></head><body><div id="editor" role="textbox" aria-label="Texto da história" contenteditable="true"></div><script nonce="editor">${editorBridge}</script></body></html>`,
   });

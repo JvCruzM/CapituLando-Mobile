@@ -1,4 +1,6 @@
+import type { FormattingAction } from "../types";
 export interface EditorProps {
+  command?: { id: number; action: FormattingAction };
   value: string;
   onChange: (html: string) => void;
   disabled: boolean;

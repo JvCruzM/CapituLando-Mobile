@@ -1,3 +1,4 @@
+import { UniverseImage } from "./UniverseImage";
 import React from "react";
 import { Image, ScrollView, StyleSheet, View } from "react-native";
 import {
@@ -107,11 +108,7 @@ function EncyclopediaDetail({ item }: { item: EncyclopediaItem }) {
   return (
     <View style={styles.detailContainer}>
       {item.image ? (
-        <Image
-          source={{ uri: item.image }}
-          resizeMode="cover"
-          style={styles.coverImage}
-        />
+        <UniverseImage uri={item.image} style={styles.coverImage} />
       ) : null}
 
       <View style={styles.headerRow}>
@@ -268,9 +265,10 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
   return (
     <View style={styles.detailContainer}>
       {character.characterImage ? (
-        <Image
-          source={{ uri: character.characterImage }}
-          resizeMode={character.imageFit === "contain" ? "contain" : "cover"}
+        <UniverseImage
+          uri={character.characterImage}
+          fit={character.imageFit}
+          position={character.imagePosition}
           style={styles.coverImage}
         />
       ) : null}
@@ -374,6 +372,16 @@ function CharacterDetail({ character }: { character: CharacterItem }) {
       <Text variant="bodyMedium" style={styles.bodyParagraph}>
         {character.backstory || "Em desenvolvimento."}
       </Text>
+      {character.notes ? (
+        <>
+          <Text variant="titleSmall" style={styles.sectionHeader}>
+            Notas
+          </Text>
+          <Text variant="bodyMedium" style={styles.bodyParagraph}>
+            {character.notes}
+          </Text>
+        </>
+      ) : null}
 
       <Divider style={styles.divider} />
 
@@ -435,11 +443,7 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
   return (
     <View style={styles.detailContainer}>
       {event.eventImage ? (
-        <Image
-          source={{ uri: event.eventImage }}
-          resizeMode="cover"
-          style={styles.coverImage}
-        />
+        <UniverseImage uri={event.eventImage} style={styles.coverImage} />
       ) : null}
 
       <View style={styles.headerRow}>
@@ -464,12 +468,6 @@ function TimelineDetail({ event }: { event: TimelineEventItem }) {
       </View>
 
       <View style={styles.chipsWrap}>
-        <Chip
-          icon="alert-decagram"
-          style={{ backgroundColor: impColor + "22" }}
-        >
-          Impacto: {event.importance}
-        </Chip>
         {event.chapterTitle ? (
           <Chip icon="book-open-variant">{event.chapterTitle}</Chip>
         ) : null}
@@ -541,7 +539,7 @@ const styles = StyleSheet.create({
   },
   coverImage: {
     width: "100%",
-    height: 180,
+    aspectRatio: 1,
     borderRadius: 12,
   },
   headerRow: {

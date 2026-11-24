@@ -22,6 +22,9 @@ function load(file, mocks = {}) {
 
 function environment(request = async () => ({})) {
   const universeApi = load("src/features/universe/services/universe-api.ts", {
+    "../../auth/session": {
+      useAuthStore: { getState: () => ({ sessionVersion: 1 }) },
+    },
     "../../../shared/api/account": { accountRequest: request },
   });
   return { universeApi };
@@ -176,108 +179,122 @@ test("mapUniverse mapeia conceitos vindos do web com edição completa e suporte
   assert.equal(magicConcept.editable, true);
 });
 
-test("saveEncyclopedia salva conceitos e lore/história via endpoint /api/stories/:storyId/concepts", async () => {
+const conceptItem = {
+  category: "theme",
+  name: "Origem",
+  description: "História",
+  attributes: {
+    "Tipo de Conceito": "Lore/História",
+    Região: "Cosmos",
+    Notas: "Nota",
+  },
+  image: "https://example.com/image.jpg",
+  tags: [],
+  subtitle: "",
+};
+test("conceitos usam documento compartilhado com revisão e preservam outras histórias", async () => {
+  let doc = {
+    revision: 9,
+    value: [
+      { id: "foreign", projectId: "other", title: "Outro", category: "Local" },
+    ],
+  };
   const calls = [];
-  const { universeApi } = environment(async (config) => {
-    calls.push(config);
-    return { success: true };
+  const { universeApi: api } = environment(async (req) => {
+    calls.push(req);
+    if (req.method === "PUT") {
+      assert.equal(req.url, "/api/workspace/concepts");
+      assert.equal(req.data.revision, doc.revision);
+      doc = { revision: doc.revision + 1, value: req.data.value };
+      return doc;
+    }
+    return structuredClone(doc);
   });
-
-  // Criação de novo conceito de Lore
-  await universeApi.saveEncyclopedia("story-123", {
-    category: "theme",
-    name: "A Origem do Mundo",
-    subtitle: "Lenda inaugural",
-    description: "No princípio havia apenas o Éter primordial.",
-    attributes: {
-      "Tipo de Conceito": "Lore/História",
-      Região: "Cosmos",
-      Notas: "Capítulo introdutório",
-    },
-    tags: ["Origem", "Primordial"],
-    image: "https://example.com/cosmos.jpg",
-    conceptCategory: "Lore/História",
-  });
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "/api/stories/story-123/concepts");
-  assert.equal(calls[0].method, "POST");
-  assert.equal(calls[0].data.name, "A Origem do Mundo");
-  assert.equal(calls[0].data.category, "Lore/História");
-  assert.equal(calls[0].data.region, "Cosmos");
-  assert.equal(calls[0].data.notes, "Capítulo introdutório");
-  assert.equal(calls[0].data.image, "https://example.com/cosmos.jpg");
-
-  // Edição de conceito existente
-  await universeApi.saveEncyclopedia(
-    "story-123",
-    {
-      category: "theme",
-      name: "A Origem do Mundo (Revisada)",
-      subtitle: "",
-      description: "Descrição expandida.",
-      attributes: {
-        "Tipo de Conceito": "Lore/História",
-      },
-      tags: [],
-    },
-    {
-      id: "concept:456",
-      category: "theme",
-      name: "A Origem do Mundo",
-      subtitle: "",
-      description: "",
-      attributes: {},
-      tags: [],
-      createdAt: "",
-      updatedAt: "",
-    },
+  await api.saveEncyclopedia("book", conceptItem);
+  assert.equal(doc.value.length, 2);
+  const added = doc.value[1];
+  assert.equal(added.category, "Lore / História");
+  assert.equal(added.imageUrl, conceptItem.image);
+  assert.equal(added.projectId, "book");
+  const original = { ...conceptItem, id: "concept:" + added.id };
+  await api.saveEncyclopedia(
+    "book",
+    { ...conceptItem, name: "Revisado" },
+    original,
   );
-
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].url, "/api/stories/story-123/concepts/456");
-  assert.equal(calls[1].method, "PUT");
-  assert.equal(calls[1].data.name, "A Origem do Mundo (Revisada)");
+  assert.equal(doc.value[1].title, "Revisado");
+  assert.equal(doc.value[0].title, "Outro");
+  await api.deleteEncyclopedia("book", original);
+  assert.equal(doc.value.length, 1);
+  await assert.rejects(
+    () =>
+      api.saveEncyclopedia("book", conceptItem, {
+        ...original,
+        id: "concept:foreign",
+      }),
+    /não encontrado/,
+  );
 });
-
-test("deleteEncyclopedia exclui conceitos e entradas com endpoints corretos", async () => {
+test("categorias relacionais enviam apenas campos reconhecidos e não repetem escritas com falha", async () => {
   const calls = [];
-  const { universeApi } = environment(async (config) => {
-    calls.push(config);
-    return { success: true };
+  const { universeApi: api } = environment(async (req) => {
+    calls.push(req);
   });
-
-  // Exclusão de conceito
-  await universeApi.deleteEncyclopedia("story-123", {
-    id: "concept:789",
-    category: "theme",
-    name: "Conceito Descartado",
-    subtitle: "",
-    description: "",
-    attributes: {},
-    tags: [],
-    createdAt: "",
-    updatedAt: "",
-  });
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "/api/stories/story-123/concepts/789");
-  assert.equal(calls[0].method, "DELETE");
-
-  // Exclusão de criatura padrão
-  await universeApi.deleteEncyclopedia("story-123", {
-    id: "creat-99",
+  await api.saveEncyclopedia("book", {
+    ...conceptItem,
     category: "creatures",
-    name: "Besta",
-    subtitle: "",
-    description: "",
-    attributes: {},
-    tags: [],
-    createdAt: "",
-    updatedAt: "",
+    attributes: { Aparência: "Alada", Comportamento: "Calmo", Habitat: "Céu" },
+    raceId: "race",
   });
-
-  assert.equal(calls.length, 2);
-  assert.equal(calls[1].url, "/api/stories/story-123/creatures/creat-99");
-  assert.equal(calls[1].method, "DELETE");
+  assert.deepEqual(calls[0].data, {
+    name: "Origem",
+    description: "História",
+    appearance: "Alada",
+    behavior: "Calmo",
+    habitat: "Céu",
+    creatureImage: conceptItem.image,
+    raceId: "race",
+  });
+  await api.deleteEncyclopedia("book", {
+    ...conceptItem,
+    category: "world-rules",
+    id: "rule",
+  });
+  assert.equal(calls[1].url, "/api/stories/book/world-rules/rule");
+  let attempts = 0;
+  const failing = environment(async () => {
+    attempts++;
+    throw Error("offline");
+  }).universeApi;
+  await assert.rejects(
+    () =>
+      failing.saveEncyclopedia("book", {
+        ...conceptItem,
+        category: "world-rules",
+      }),
+    /offline/,
+  );
+  assert.equal(attempts, 1);
+});
+test("mapeamento mantém capítulos, notas de personagem e ordem da cronologia livre", () => {
+  const { universeApi: api } = environment();
+  const data = api.mapUniverse({
+    chapters: [{ id: "ch", title: "Capítulo" }],
+    characters: [{ id: "c", name: "Pessoa", notes: "Nota web" }],
+    chronology: [
+      {
+        id: "e",
+        title: "Origem",
+        order: 0,
+        location: "Vale",
+        characters: "Ana, Bia",
+        yearOrDate: "Antes",
+      },
+    ],
+  });
+  assert.equal(data.chapters[0].id, "ch");
+  assert.equal(data.characters[0].notes, "Nota web");
+  assert.equal(data.timelineEvents[0].dateOrder, 0);
+  assert.equal(data.timelineEvents[0].location, "Vale");
+  assert.deepEqual(data.timelineEvents[0].charactersInvolved, ["Ana", "Bia"]);
 });

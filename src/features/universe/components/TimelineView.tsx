@@ -1,16 +1,29 @@
 import React, { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
-import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
+import {
+  Card,
+  Chip,
+  Surface,
+  Text,
+  SegmentedButtons,
+  useTheme,
+} from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import { useUniverseStore, useUniverseStats } from "../universe-store";
 import { TIMELINE_IMPORTANCE_COLORS } from "../constants";
 import type { TimelineEventItem } from "../types";
 
 interface TimelineViewProps {
+  mode: "free" | "linked";
+  onModeChange: (mode: "free" | "linked") => void;
   onSelectEvent: (event: TimelineEventItem) => void;
 }
 
-export function TimelineView({ onSelectEvent }: TimelineViewProps) {
+export function TimelineView({
+  onSelectEvent,
+  mode,
+  onModeChange,
+}: TimelineViewProps) {
   const theme = useTheme();
   const events = useUniverseStore((state) => state.timelineEvents);
   const selectedEra = useUniverseStore((state) => state.selectedEra);
@@ -22,14 +35,16 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
   const eras = useMemo(() => {
     const set = new Set<string>();
     for (const ev of events) {
-      if (ev.era) set.add(ev.era);
+      if (ev.era && ev.id.startsWith("chronology:") === (mode === "free"))
+        set.add(ev.era);
     }
     return Array.from(set);
-  }, [events]);
+  }, [events, mode]);
 
   const filteredEvents = useMemo(() => {
     return events
       .filter((ev) => {
+        if (ev.id.startsWith("chronology:") !== (mode === "free")) return false;
         const matchesEra = selectedEra === "all" || ev.era === selectedEra;
         if (!matchesEra) return false;
 
@@ -59,10 +74,21 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
         );
       })
       .sort((a, b) => a.dateOrder - b.dateOrder);
-  }, [events, selectedEra, searchQuery]);
+  }, [events, selectedEra, searchQuery, mode]);
 
   return (
     <View style={styles.container}>
+      <SegmentedButtons
+        value={mode}
+        onValueChange={(v) => {
+          setSelectedEra("all");
+          onModeChange(v as "free" | "linked");
+        }}
+        buttons={[
+          { value: "free", label: "Cronologia livre" },
+          { value: "linked", label: "Eventos" },
+        ]}
+      />
       {/* Era filter chips */}
       <ScrollView
         horizontal
@@ -75,7 +101,7 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
           style={styles.pill}
           icon="timeline-text"
         >
-          Todas as Eras ({stats.totalTimeline})
+          Todos os períodos
         </Chip>
         {eras.map((era) => {
           const count = events.filter((e) => e.era === era).length;
@@ -171,20 +197,6 @@ export function TimelineView({ onSelectEvent }: TimelineViewProps) {
                             style={styles.dateBadge}
                           >
                             {event.dateDisplay}
-                          </Chip>
-                          <Chip
-                            compact
-                            style={[
-                              styles.importanceBadge,
-                              { backgroundColor: impColor + "20" },
-                            ]}
-                            textStyle={{
-                              color: impColor,
-                              fontWeight: "700",
-                              fontSize: 11,
-                            }}
-                          >
-                            {event.importance}
                           </Chip>
                         </View>
 

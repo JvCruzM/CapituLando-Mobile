@@ -37,6 +37,7 @@ export interface CharacterRecord {
 }
 
 export interface SaveCharacterPayload {
+  organizationIds?: string[];
   organizationId?: string | null;
   name: string;
   raceId?: string | null;
