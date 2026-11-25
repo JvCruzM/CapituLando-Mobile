@@ -1,3 +1,4 @@
+import { authorWebsite, openAuthorWebsite } from "../services/profile-website";
 import { useState } from "react";
 import { View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ import {
 } from "../services/profile-api";
 
 export function ProfileScreen() {
+  const [editing, setEditing] = useState(false);
   const userId = useAuthStore((state) => state.session?.user.id ?? "");
   const query = useQuery({
     queryKey: ["profile", userId],
@@ -29,10 +31,106 @@ export function ProfileScreen() {
         retry={() => void query.refetch()}
       />
     );
-  return <ProfileForm key={userId} profile={query.data} />;
+  return editing ? (
+    <ProfileForm
+      key={userId}
+      profile={query.data}
+      onClose={() => setEditing(false)}
+    />
+  ) : (
+    <ProfileDetails profile={query.data} onEdit={() => setEditing(true)} />
+  );
 }
 
-function ProfileForm({ profile }: { profile: Profile }) {
+function ProfileDetails({
+  profile,
+  onEdit,
+}: {
+  profile: Profile;
+  onEdit: () => void;
+}) {
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState("");
+  const website = authorWebsite(profile.websiteUrl ?? "");
+  return (
+    <Screen>
+      <Text variant="headlineMedium" accessibilityRole="header">
+        Meu perfil
+      </Text>
+      <ProfileAvatar
+        uri={profile.avatarImage}
+        name={profile.displayName}
+        size={112}
+      />
+      <Text variant="headlineSmall">{profile.displayName}</Text>
+      <Text>@{profile.username}</Text>
+      <Text>{profile.email}</Text>
+      {profile.penName ? (
+        <>
+          <Text variant="titleMedium">Pseudônimo</Text>
+          <Text>{profile.penName}</Text>
+        </>
+      ) : null}
+      <Text variant="titleMedium">Sobre mim</Text>
+      <Text>
+        {profile.bio?.trim() || "Sua biografia ainda não foi preenchida."}
+      </Text>
+      {profile.quote ? (
+        <>
+          <Text variant="titleMedium">Minha frase</Text>
+          <Text>{profile.quote}</Text>
+        </>
+      ) : null}
+      <Text variant="titleMedium">Gêneros favoritos</Text>
+      {profile.favoriteGenres?.length ? (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {profile.favoriteGenres.map((item) => (
+            <Chip key={item}>{item}</Chip>
+          ))}
+        </View>
+      ) : (
+        <Text>Nenhum gênero informado.</Text>
+      )}
+      {website ? (
+        <Button
+          icon="open-in-new"
+          mode="outlined"
+          loading={opening}
+          disabled={opening}
+          onPress={async () => {
+            setOpening(true);
+            setError("");
+            try {
+              await openAuthorWebsite(website);
+            } catch (cause) {
+              setError(accountErrorMessage(cause));
+            } finally {
+              setOpening(false);
+            }
+          }}
+        >
+          Visitar site do autor
+        </Button>
+      ) : null}
+      {error ? (
+        <HelperText type="error" accessibilityLiveRegion="polite">
+          {error}
+        </HelperText>
+      ) : null}
+      <Button mode="contained" onPress={onEdit}>
+        Editar perfil
+      </Button>
+    </Screen>
+  );
+}
+
+function ProfileForm({
+  profile,
+  onClose,
+}: {
+  profile: Profile;
+  onClose: () => void;
+}) {
   const client = useQueryClient();
   const [username, setUsername] = useState(profile.username);
   const [displayName, setDisplayName] = useState(profile.displayName);
@@ -52,6 +150,7 @@ function ProfileForm({ profile }: { profile: Profile }) {
     mutationFn: saveProfile,
     onSuccess(updated) {
       client.setQueryData(["profile", profile.id], updated);
+      onClose();
       useAuthStore.setState((state) =>
         state.session?.user.id === updated.id
           ? {
@@ -93,15 +192,10 @@ function ProfileForm({ profile }: { profile: Profile }) {
     }
     if (!displayName.trim())
       return setValidation("Informe seu nome de exibição.");
-    if (websiteUrl.trim()) {
-      try {
-        if (!["http:", "https:"].includes(new URL(websiteUrl.trim()).protocol))
-          throw new Error();
-      } catch {
-        return setValidation(
-          "Informe um site começando com http:// ou https://.",
-        );
-      }
+    if (websiteUrl.trim() && !authorWebsite(websiteUrl)) {
+      return setValidation(
+        "Informe um site começando com http:// ou https://, sem usuário ou senha no endereço.",
+      );
     }
     save.mutate({
       username: username.trim(),
@@ -264,6 +358,9 @@ function ProfileForm({ profile }: { profile: Profile }) {
         onPress={submit}
       >
         Salvar perfil
+      </Button>
+      <Button disabled={busy} onPress={onClose}>
+        Cancelar edição
       </Button>
     </Screen>
   );

@@ -17,11 +17,14 @@
       ],
       "expo-sharing",
       "expo-notifications",
-      ["expo-image-picker", {
-        "photosPermission": "Permita que o CapituLando acesse a foto que você escolher para seu perfil.",
-        "cameraPermission": false,
-        "microphonePermission": false
-      }]
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permita que o CapituLando acesse a foto que você escolher para seu perfil.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
@@ -45,7 +48,11 @@
     "updates": {
       "url": "https://u.expo.dev/f0803c57-b1d5-4182-baeb-63c6dd38db58"
     },
-    "android": {},
-    "ios": {}
+    "android": {
+      "package": "com.capitulando.mobile"
+    },
+    "ios": {
+      "bundleIdentifier": "com.capitulando.mobile"
+    }
   }
 }
