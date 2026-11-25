@@ -219,6 +219,8 @@ function nativeEditor() {
   const listeners = {},
     messages = [];
   const editor = {
+    ownerDocument: { defaultView: null },
+    querySelectorAll: () => [],
     style: {},
     get innerHTML() {
       return html;
@@ -399,6 +401,8 @@ test("barra de formatação nativa emite HTML e ignora comandos desconhecidos", 
     messages = [],
     commands = [];
   const editor = {
+    ownerDocument: { defaultView: null },
+    querySelectorAll: () => [],
     isContentEditable: true,
     focus() {},
     get innerHTML() {
@@ -710,4 +714,446 @@ test("recuperação já limpa em outra sessão atualiza a revisão sem abrir con
     version: 0,
   });
   assert.equal(writes, 2);
+});
+
+test("H1 e H2 geram blocos HTML distintos na ponte nativa", () => {
+  const calls = [],
+    messages = [],
+    events = {};
+  const editor = {
+    ownerDocument: { defaultView: null },
+    querySelectorAll: () => [],
+    isContentEditable: true,
+    innerHTML: "Texto",
+    focus() {},
+    addEventListener: (name, fn) => (events[name] = fn),
+    dispatchEvent: () => events.input(),
+  };
+  const window = {
+    ReactNativeWebView: {
+      postMessage: (data) => messages.push(JSON.parse(data)),
+    },
+  };
+  const document = {
+    getElementById: () => editor,
+    execCommand: (name, ui, tag) => {
+      calls.push([name, tag]);
+      editor.innerHTML = "<" + tag + ">Texto</" + tag + ">";
+    },
+  };
+  new Function("window", "document", bridge.editorBridge)(window, document);
+  window.formatEditor("h1");
+  window.formatEditor("h2");
+  assert.deepEqual(calls, [
+    ["formatBlock", "h1"],
+    ["formatBlock", "h2"],
+  ]);
+  assert.deepEqual(
+    messages.map((m) => m.html),
+    ["<h1>Texto</h1>", "<h2>Texto</h2>"],
+  );
+  editor.isContentEditable = false;
+  window.formatEditor("bold");
+  assert.equal(calls.length, 2);
+});
+
+test("leitura individual usa sessão autenticada e mantém HTML, status e revisão zero no cache", async () => {
+  const calls = [];
+  const { store, auth } = environment(async (req) => {
+    calls.push(req);
+    return {
+      id: "a",
+      story_id: "book",
+      title: "Capítulo",
+      content: "<h1>Título</h1><p>Texto</p>",
+      status: "IN_REVIEW",
+      version: 0,
+    };
+  });
+  const entry = await store.fetchSingleEntryFromApi(config, "book", "a");
+  assert.equal(calls[0].url, "/api/writing/stories/book/items/a");
+  assert.equal(calls[0].method, "GET");
+  assert.equal(entry.version, 0);
+  assert.equal(entry.status, "in_review");
+  assert.equal(entry.content, "<h1>Título</h1><p>Texto</p>");
+  assert.deepEqual((await store.readCachedEntries("owner", "book")).chapters, [
+    entry,
+  ]);
+  auth.session = { user: { id: "other" }, sessionId: "other-session" };
+  await assert.rejects(
+    () => store.fetchSingleEntryFromApi(config, "book", "a"),
+    /sessão mudou/,
+  );
+  assert.equal(calls.length, 1);
+});
+
+test("exclusão autenticada limpa apenas o capítulo e preserva recuperação como rascunho", async () => {
+  const calls = [];
+  const { store } = environment(async (req) => {
+    calls.push(req);
+    return {};
+  });
+  await store.writeCachedEntries("owner", "book", {
+    chapters: [{ id: "a" }, { id: "b" }],
+    drafts: [],
+  });
+  await store.saveLocalRecovery("owner", "book", {
+    itemId: "a",
+    content: "Texto pendente",
+    kind: "chapter",
+    version: 4,
+  });
+  await store.deleteEntryFromStory(config, "book", "a");
+  assert.equal(calls[0].method, "DELETE");
+  assert.equal(calls[0].url, "/api/writing/stories/book/items/a");
+  assert.deepEqual(
+    (await store.readCachedEntries("owner", "book")).chapters.map((e) => e.id),
+    ["b"],
+  );
+  const recovery = await store.loadLocalRecovery("owner", "book");
+  assert.equal(recovery.itemId, null);
+  assert.equal(recovery.content, "Texto pendente");
+});
+
+test("leitor preserva HTML, cancela respostas de telas fechadas e mostra falhas de atualização", async () => {
+  const slots = [];
+  let cursor = 0,
+    effects = [],
+    dirty = false;
+  const hooks = {
+    useState(initial) {
+      const i = cursor++;
+      if (!(i in slots))
+        slots[i] = typeof initial === "function" ? initial() : initial;
+      return [
+        slots[i],
+        (next) => {
+          const value = typeof next === "function" ? next(slots[i]) : next;
+          if (!Object.is(slots[i], value)) {
+            slots[i] = value;
+            dirty = true;
+          }
+        },
+      ];
+    },
+    useRef(initial) {
+      const i = cursor++;
+      return (slots[i] ??= { current: initial });
+    },
+    useEffect(effect, deps) {
+      const i = cursor++,
+        previous = slots[i];
+      if (!previous || deps.some((d, n) => !Object.is(d, previous.deps[n]))) {
+        effects.push(() => {
+          previous?.cleanup?.();
+          slots[i] = { deps, cleanup: effect() };
+        });
+      }
+    },
+  };
+  const { ChapterListModal } = load(
+    "src/features/writing/components/ChapterListModal.tsx",
+    {
+      react: hooks,
+      "react-native": Object.fromEntries(
+        [
+          "Modal",
+          "View",
+          "Text",
+          "TouchableOpacity",
+          "ScrollView",
+          "ActivityIndicator",
+        ]
+          .map((n) => [n, n])
+          .concat([["StyleSheet", { create: (s) => s }]]),
+      ),
+      "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
+      "lucide-react-native": Object.fromEntries(
+        ["X", "BookOpen", "Edit3", "Trash2", "ArrowLeft", "PenTool"].map(
+          (n) => [n, n],
+        ),
+      ),
+      "./RichTextEditor": { RichTextEditor: "Reader" },
+      "./editor-content": editor,
+      "../writing-store": { getStatusLabel: () => "Em revisão" },
+    },
+  );
+  const entry = {
+    id: "a",
+    title: "Primeiro",
+    content: "<h1>Título</h1><p>Texto</p>",
+    kind: "chapter",
+    status: "in_review",
+    version: 0,
+    wordCount: 2,
+  };
+  let resolve, reject;
+  let props = {
+    visible: true,
+    kind: "chapter",
+    entries: [entry],
+    isDark: false,
+    onLoadEntry: () =>
+      new Promise((yes, no) => {
+        resolve = yes;
+        reject = no;
+      }),
+    onClose: () => {
+      props = { ...props, visible: false };
+    },
+    onOpenInEditor() {},
+    onDeleteEntry() {},
+  };
+  function render() {
+    let tree;
+    do {
+      dirty = false;
+      cursor = 0;
+      effects = [];
+      tree = ChapterListModal(props);
+      effects.forEach((run) => run());
+    } while (dirty);
+    return tree;
+  }
+  function nodes(tree) {
+    if (!tree || typeof tree !== "object") return [];
+    if (Array.isArray(tree)) return tree.flatMap(nodes);
+    return [tree, ...nodes(tree.props?.children)];
+  }
+  function text(tree) {
+    if (typeof tree === "string") return tree;
+    if (Array.isArray(tree)) return tree.map(text).join("");
+    return tree?.props ? text(tree.props.children) : "";
+  }
+  const clickRead = (tree) =>
+    nodes(tree)
+      .find((n) => n.props?.onPress && text(n) === "Ler")
+      .props.onPress();
+  let tree = render();
+  clickRead(tree);
+  tree = render();
+  assert.equal(
+    nodes(tree).find((n) => n.type === "Reader").props.value,
+    entry.content,
+  );
+  const resolveOld = resolve;
+  nodes(tree)
+    .find((n) => n.type === "Modal")
+    .props.onRequestClose();
+  render();
+  const second = {
+    ...entry,
+    id: "b",
+    title: "Segundo",
+    content: "<p>Segundo</p>",
+  };
+  props = { ...props, visible: true, initialEntry: second };
+  tree = render();
+  resolveOld({ ...entry, content: "Resposta antiga" });
+  await new Promise(setImmediate);
+  tree = render();
+  assert.equal(
+    nodes(tree).find((n) => n.type === "Reader").props.value,
+    second.content,
+  );
+  nodes(tree)
+    .find((n) => n.props?.onPress && text(n) === "Voltar à lista")
+    .props.onPress();
+  tree = render();
+  clickRead(tree);
+  render();
+  reject(new Error("Sem conexão"));
+  await new Promise(setImmediate);
+  tree = render();
+  assert(
+    nodes(tree).some(
+      (n) =>
+        n.props?.accessibilityRole === "alert" && text(n) === "Sem conexão",
+    ),
+  );
+  assert.equal(
+    nodes(tree).find((n) => n.type === "Reader").props.value,
+    entry.content,
+  );
+  assert(!text(tree).includes("Espaço de Escrita"));
+  let backs = 0,
+    deleted = [],
+    failDelete = true;
+  props = {
+    ...props,
+    onBackToList: () => {
+      backs++;
+      props = { ...props, visible: false };
+    },
+    onDeleteEntry: async (target) => {
+      deleted.push(target.id);
+      if (failDelete) throw new Error("Falha na exclusão");
+    },
+  };
+  const click = (label) => {
+    nodes(tree)
+      .find((n) => n.props?.onPress && text(n) === label)
+      .props.onPress();
+    tree = render();
+  };
+  tree = render();
+  click("Excluir");
+  assert(text(tree).includes("Excluir texto?"));
+  click("Cancelar");
+  assert.equal(backs, 0);
+  assert.equal(deleted.length, 0);
+  assert.equal(
+    nodes(tree).find((n) => n.type === "Reader").props.value,
+    entry.content,
+  );
+  click("Excluir");
+  click("Confirmar exclusão");
+  await new Promise(setImmediate);
+  tree = render();
+  assert(text(tree).includes("Falha na exclusão"));
+  assert.equal(backs, 0);
+  failDelete = false;
+  click("Confirmar exclusão");
+  await new Promise(setImmediate);
+  tree = render();
+  assert.equal(backs, 1);
+  assert.deepEqual(deleted, ["a", "a"]);
+});
+
+test("Ler abre sobre a listagem padrão de capítulos e só Editar navega ao espaço de escrita", () => {
+  const values = [];
+  let cursor = 0;
+  const navigations = [];
+  const chapter = {
+    id: "chapter",
+    storyId: "book",
+    title: "Capítulo",
+    content: "<h1>Título</h1>",
+    kind: "chapter",
+    status: "IN_REVIEW",
+    version: 0,
+    wordCount: 1,
+  };
+  const session = { user: { id: "owner" }, sessionId: "session" };
+  const { default: ChaptersScreen } = load(
+    "src/features/chapters/screens/ChaptersScreen.tsx",
+    {
+      react: {
+        useState(initial) {
+          const i = cursor++;
+          if (!(i in values)) values[i] = initial;
+          return [values[i], (value) => (values[i] = value)];
+        },
+      },
+      "expo-router": {
+        router: { push: (target) => navigations.push(target) },
+        useLocalSearchParams: () => ({ id: "book", title: "Livro" }),
+      },
+      "@tanstack/react-query": {
+        useQuery: () => ({ data: { chapters: [chapter], drafts: [] } }),
+        useQueryClient: () => ({ invalidateQueries: async () => {} }),
+        useMutation: () => ({
+          isPending: false,
+          reset() {},
+          mutate() {},
+          mutateAsync: async () => {},
+        }),
+      },
+      "react-native-paper": Object.fromEntries(
+        ["Button", "Card", "Dialog", "HelperText", "Portal", "Text"]
+          .map((name) => [
+            name,
+            Object.assign(() => null, {
+              Content: name + ".Content",
+              Actions: name + ".Actions",
+              Title: name + ".Title",
+            }),
+          ])
+          .concat([["useTheme", () => ({ dark: false })]]),
+      ),
+      "../../auth/session": {
+        useAuthStore: (selector) => selector({ session }),
+      },
+      "../../../shared/api/account": {
+        accountRequest() {},
+        accountErrorMessage() {},
+      },
+      "../../../shared/components/AccountQueryStatus": {
+        AccountQueryStatus: "AccountQueryStatus",
+      },
+      "../../../shared/components/Screen": { Screen: "Screen" },
+      "../../writing/components/ChapterListModal": {
+        ChapterListModal: "ChapterListModal",
+      },
+      "../../writing/writing-store": {
+        forgetCachedChapter: async () => {},
+        fetchSingleEntryFromApi: async () => chapter,
+        normalizeItemStatus: (status) => status.toLowerCase(),
+      },
+    },
+  );
+  const render = () => {
+    cursor = 0;
+    return ChaptersScreen();
+  };
+  function nodes(tree) {
+    if (!tree || typeof tree !== "object") return [];
+    if (Array.isArray(tree)) return tree.flatMap(nodes);
+    return [tree, ...nodes(tree.props?.children)];
+  }
+  function text(tree) {
+    if (typeof tree === "string") return tree;
+    if (Array.isArray(tree)) return tree.map(text).join("");
+    return tree?.props ? text(tree.props.children) : "";
+  }
+  let tree = render();
+  nodes(tree)
+    .find((n) => n.props?.onPress && text(n) === "Ler")
+    .props.onPress();
+  tree = render();
+  let reader = nodes(tree).find((n) => n.type === "ChapterListModal");
+  assert.equal(reader.props.visible, true);
+  assert.equal(reader.props.initialEntry.id, "chapter");
+  assert.equal(reader.props.initialEntry.status, "in_review");
+  assert.equal(navigations.length, 0);
+  reader.props.onBackToList();
+  tree = render();
+  assert.equal(
+    nodes(tree).find((n) => n.type === "ChapterListModal").props.visible,
+    false,
+  );
+  assert.equal(navigations.length, 0);
+  reader.props.onOpenInEditor(chapter);
+  assert.deepEqual(navigations, [
+    {
+      pathname: "/escrita",
+      params: { storyId: "book", itemId: "chapter", mode: "edit" },
+    },
+  ]);
+});
+
+test("ponte nativa continua executável quando o motor não fornece o código-fonte das funções", () => {
+  const compiled = ts.transpileModule(
+    fs.readFileSync("src/features/writing/components/editor-bridge.ts", "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText;
+  const initialize = new Function("require", "module", "exports", compiled);
+  const module = { exports: {} };
+  const original = Function.prototype.toString;
+  try {
+    Function.prototype.toString = function () {
+      return "function () { [bytecode] }";
+    };
+    initialize(() => ({ prepareEditorBlocks() {} }), module, module.exports);
+  } finally {
+    Function.prototype.toString = original;
+  }
+  assert.doesNotThrow(
+    () => new Function("window", "document", module.exports.editorBridge),
+  );
 });

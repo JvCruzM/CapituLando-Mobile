@@ -1,3 +1,8 @@
+import { ChapterListModal } from "../../writing/components/ChapterListModal";
+import {
+  fetchSingleEntryFromApi,
+  normalizeItemStatus,
+} from "../../writing/writing-store";
 import { forgetCachedChapter } from "../../writing/writing-store";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +14,7 @@ import {
   HelperText,
   Portal,
   Text,
+  useTheme,
 } from "react-native-paper";
 import { useAuthStore } from "../../auth/session";
 import {
@@ -20,7 +26,10 @@ import { Screen } from "../../../shared/components/Screen";
 import type { WritingEntry } from "../../writing/types";
 export default function ChaptersScreen() {
   const { id, title } = useLocalSearchParams<{ id: string; title?: string }>();
-  const owner = useAuthStore((s) => s.session?.user.id ?? "");
+  const session = useAuthStore((s) => s.session);
+  const owner = session?.user.id ?? "";
+  const isDark = useTheme().dark;
+  const [readingEntry, setReadingEntry] = useState<WritingEntry | null>(null);
   const client = useQueryClient(),
     [deleting, setDeleting] = useState<string | null>(null);
   const query = useQuery({
@@ -33,12 +42,12 @@ export default function ChaptersScreen() {
       }),
   });
   const remove = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (itemId: string) => {
       await accountRequest({
-        url: `/api/writing/stories/${id}/items/${deleting}`,
+        url: `/api/writing/stories/${id}/items/${itemId}`,
         method: "DELETE",
       });
-      await forgetCachedChapter(owner, id, deleting!);
+      await forgetCachedChapter(owner, id, itemId);
     },
     onSuccess: async () => {
       setDeleting(null);
@@ -81,6 +90,27 @@ export default function ChaptersScreen() {
           <Card.Actions>
             <Button
               disabled={remove.isPending}
+              onPress={() =>
+                setReadingEntry({
+                  ...c,
+                  status: normalizeItemStatus(c.status, c.kind),
+                })
+              }
+            >
+              Ler
+            </Button>
+            <Button
+              onPress={() =>
+                router.push({
+                  pathname: "/escrita",
+                  params: { storyId: id, itemId: c.id, mode: "edit" },
+                })
+              }
+            >
+              Editar
+            </Button>
+            <Button
+              disabled={remove.isPending}
               onPress={() => {
                 remove.reset();
                 setDeleting(c.id);
@@ -91,6 +121,43 @@ export default function ChaptersScreen() {
           </Card.Actions>
         </Card>
       ))}
+      <ChapterListModal
+        visible={Boolean(readingEntry)}
+        initialEntry={readingEntry}
+        kind={readingEntry?.kind ?? "chapter"}
+        entries={(readingEntry?.kind === "draft"
+          ? query.data.drafts
+          : query.data.chapters
+        ).map((entry) => ({
+          ...entry,
+          status: normalizeItemStatus(entry.status, entry.kind),
+        }))}
+        isDark={isDark}
+        disabled={remove.isPending}
+        onClose={() => setReadingEntry(null)}
+        onBackToList={() => setReadingEntry(null)}
+        onLoadEntry={(entry) =>
+          fetchSingleEntryFromApi(
+            {
+              baseUrl: "/",
+              userId: owner,
+              sessionId: session?.sessionId ?? "",
+            },
+            id,
+            entry.id,
+          )
+        }
+        onOpenInEditor={(entry) => {
+          setReadingEntry(null);
+          router.push({
+            pathname: "/escrita",
+            params: { storyId: id, itemId: entry.id, mode: "edit" },
+          });
+        }}
+        onDeleteEntry={async (entry) => {
+          await remove.mutateAsync(entry.id);
+        }}
+      />
       <Portal>
         <Dialog
           visible={Boolean(deleting)}
@@ -116,7 +183,9 @@ export default function ChaptersScreen() {
             <Button
               disabled={remove.isPending}
               loading={remove.isPending}
-              onPress={() => remove.mutate()}
+              onPress={() => {
+                if (deleting) remove.mutate(deleting);
+              }}
             >
               Excluir
             </Button>

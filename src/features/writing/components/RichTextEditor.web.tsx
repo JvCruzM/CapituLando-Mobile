@@ -1,3 +1,4 @@
+import { prepareEditorBlocks } from "./editor-formatting";
 import { createElement, useEffect, useRef } from "react";
 import { asHtml, type EditorProps } from "./editor-content";
 function clean(value: string) {
@@ -43,6 +44,7 @@ function clean(value: string) {
     for (const attr of [...el.attributes]) el.removeAttribute(attr.name);
     if (!allowed.has(el.tagName)) el.replaceWith(...el.childNodes);
   }
+  prepareEditorBlocks(doc.body);
   return doc.body.innerHTML;
 }
 export function RichTextEditor({
@@ -83,12 +85,18 @@ export function RichTextEditor({
       bold: ["bold"],
       italic: ["italic"],
       underline: ["underline"],
-      heading: ["formatBlock", "h2"],
+      h1: ["formatBlock", "h1"],
+      h2: ["formatBlock", "h2"],
       quote: ["formatBlock", "blockquote"],
       list: ["insertUnorderedList"],
     };
     const args = commands[command.action];
+    prepareEditorBlocks(editor);
     document.execCommand(args[0]!, false, args[1]);
+    prepareEditorBlocks(editor);
+    const selection = window.getSelection();
+    if (selection?.rangeCount && editor.contains(selection.anchorNode))
+      savedRange.current = selection.getRangeAt(0).cloneRange();
     latest.current = editor.innerHTML;
     onChange(editor.innerHTML);
   }, [command?.id]);
@@ -121,6 +129,7 @@ export function RichTextEditor({
       );
     },
     onInput: (event: React.FormEvent<HTMLDivElement>) => {
+      prepareEditorBlocks(event.currentTarget);
       const html = event.currentTarget.innerHTML;
       latest.current = html;
       onChange(html);

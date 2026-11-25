@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Text } from "react-native-paper";
@@ -24,8 +24,15 @@ function WritingRouteContent({
   ownerId: string;
   sessionId: string;
 }) {
-  const params = useLocalSearchParams<{ storyId?: string }>();
+  const params = useLocalSearchParams<{
+    storyId?: string;
+    itemId?: string;
+    mode?: "read" | "edit";
+  }>();
   const [selected, setSelected] = useState(params.storyId ?? "");
+  useEffect(() => {
+    if (params.storyId) setSelected(params.storyId);
+  }, [params.storyId]);
   const client = useQueryClient();
   const baseUrl = "/";
   const stories = useQuery({
@@ -54,7 +61,9 @@ function WritingRouteContent({
     );
   return (
     <WritingScreen
-      key={`${ownerId}:${storyId}`}
+      key={`${ownerId}:${storyId}:${params.itemId ?? ""}:${params.mode ?? ""}`}
+      initialItemId={params.storyId === storyId ? params.itemId : undefined}
+      initialMode={params.mode}
       userId={ownerId}
       storyId={storyId}
       stories={stories.data}
