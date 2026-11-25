@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
 import { Button, HelperText, Text, TextInput } from "react-native-paper";
@@ -81,9 +82,13 @@ export function TokenScreen({ mode, token }: Props) {
         </HelperText>
       ) : done ? (
         <Text>
-          {reset
-            ? "Entre novamente com sua nova senha."
-            : "Sua conta está confirmada."}
+          {Platform.OS === "web"
+            ? reset
+              ? "Senha redefinida. Você já pode fechar esta aba e voltar ao Expo Go para entrar com a nova senha."
+              : "Sua conta está confirmada. Você já pode fechar esta aba e voltar ao Expo Go."
+            : reset
+              ? "Entre novamente com sua nova senha."
+              : "Sua conta está confirmada."}
         </Text>
       ) : (
         <>
@@ -133,11 +138,13 @@ export function TokenScreen({ mode, token }: Props) {
           </Button>
         </>
       )}
-      <Link href={session ? "/" : "/entrar"} replace asChild>
-        <Button disabled={busy}>
-          {session ? "Ir para o início" : "Ir para o login"}
-        </Button>
-      </Link>
+      {!(Platform.OS === "web" && done) && (
+        <Link href={session ? "/" : "/entrar"} replace asChild>
+          <Button disabled={busy}>
+            {session ? "Ir para o início" : "Ir para o login"}
+          </Button>
+        </Link>
+      )}
     </Screen>
   );
 }
