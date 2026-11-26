@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocalSearchParams } from "expo-router";
 import { StyleSheet, View } from "react-native";
-import { Button, HelperText, Text, TextInput } from "react-native-paper";
+import { HelperText, Text } from "react-native-paper";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import {
   authErrorMessage,

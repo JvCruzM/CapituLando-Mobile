@@ -3,13 +3,8 @@ import { Platform, Pressable, View } from "react-native";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
-import {
-  Button,
-  Dialog,
-  Portal,
-  TextInput,
-  useTheme,
-} from "react-native-paper";
+import { Dialog, Portal, useTheme } from "react-native-paper";
+import { Button, TextInput } from "../../../shared/components/Controls";
 
 interface Props {
   value: string;
@@ -88,7 +83,7 @@ export function ReminderTimeInput({ value, disabled, onChange }: Props) {
                 onValueChange={(_event, next) => setSelected(next)}
               />
             </Dialog.Content>
-            <Dialog.Actions>
+            <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
               <Button onPress={() => setVisible(false)}>Cancelar</Button>
               <Button
                 onPress={() => {

@@ -1,19 +1,18 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import {
-  Button,
   Chip,
   Dialog,
   Divider,
   HelperText,
-  IconButton,
   Portal,
   Surface,
   Switch,
   Text,
-  TextInput,
   useTheme,
 } from "react-native-paper";
+import { IconButton } from "../../../shared/components/Controls";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { accountErrorMessage } from "../../../shared/api/account";
 import type { CharacterRecord } from "../services/characterService";
 import type {
@@ -214,7 +213,9 @@ export function CharacterRelationsModal({
           type: relType.trim(),
           description: relDescription.trim() || null,
           level:
-            Number.isFinite(parsedLevel) && parsedLevel >= 1 && parsedLevel <= 10
+            Number.isFinite(parsedLevel) &&
+            parsedLevel >= 1 &&
+            parsedLevel <= 10
               ? parsedLevel
               : null,
         },
@@ -500,7 +501,7 @@ export function CharacterRelationsModal({
             {error ? <HelperText type="error">{error}</HelperText> : null}
           </ScrollView>
         </Dialog.ScrollArea>
-        <Dialog.Actions>
+        <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
           <Button disabled={busy} onPress={onDismiss}>
             Fechar
           </Button>

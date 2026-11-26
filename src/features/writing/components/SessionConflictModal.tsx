@@ -1,4 +1,3 @@
-import React from "react";
 import {
   Modal,
   View,
@@ -37,10 +36,10 @@ export function SessionConflictModal({
 }: Props) {
   if (!conflict) return null;
 
-  const bgCard = isDark ? "#1a1120" : "#fcf8f2";
-  const bgBox = isDark ? "#24172d" : "#ffffff";
+  const bgCard = isDark ? "#1a1321" : "#fcf8f2";
+  const bgBox = isDark ? "#221a2b" : "#ffffff";
   const textPrimary = isDark ? "#f5f5f4" : "#1c1917";
-  const textMuted = isDark ? "#a8a29e" : "#57534e";
+  const textMuted = isDark ? "#c6bdc9" : "#655c63";
   const accent = isDark ? "#9d174d" : "#4b1d3f";
 
   return (

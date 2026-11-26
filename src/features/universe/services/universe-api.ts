@@ -126,9 +126,6 @@ export function mapUniverse(snapshot: Record<string, unknown>): UniverseData {
   const locationNames = new Map(
     rows("locations").map((row) => [text(row.id), text(row.name)]),
   );
-  const organizationNames = new Map(
-    rows("organizations").map((row) => [text(row.id), text(row.name)]),
-  );
 
   const encyclopediaItems: EncyclopediaItem[] = [];
 

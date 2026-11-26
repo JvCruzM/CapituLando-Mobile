@@ -10,7 +10,7 @@ import {
   type ComponentRef,
 } from "react";
 import { TextInput as NativeInput, type TextInputProps } from "react-native";
-import { TextInput as PaperInput } from "react-native-paper";
+import { TextInput as PaperInput } from "../../../shared/components/Controls";
 type InputInstance = ComponentRef<typeof NativeInput>;
 const NativeFormInput = forwardRef<InputInstance, TextInputProps>(
   function NativeFormInput({ value, onChangeText, ...props }, forwardedRef) {

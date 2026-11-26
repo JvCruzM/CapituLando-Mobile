@@ -2,15 +2,10 @@ import { ChapterListModal } from "../components/ChapterListModal";
 import { ChapterConflictModal } from "../components/ChapterConflictModal";
 import { RichTextEditor } from "../components/RichTextEditor";
 import { plainText } from "../components/editor-content";
-import React, {
-  useState,
-  useEffect,
-  useRef,
-  useMemo,
-  useCallback,
-} from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
+  ActivityIndicator,
   Text,
   TextInput,
   TouchableOpacity,
@@ -31,6 +26,7 @@ import {
   Type,
   Clock,
   FileText,
+  FileDown,
   Sliders,
   Send,
   FolderOpen,
@@ -67,7 +63,8 @@ import {
   syncRemoteRecoveryToApi,
   type WritingApiConfig,
 } from "../writing-store";
-import { useTheme, Button, Dialog, Portal } from "react-native-paper";
+import { useTheme, Dialog, Portal } from "react-native-paper";
+import { Button } from "../../../shared/components/Controls";
 import { useAuthStore } from "../../auth/session";
 import { exportWritingAsPdf, exportWritingAsTxt } from "../export-writing";
 import { SessionConflictModal } from "../components/SessionConflictModal";
@@ -127,7 +124,7 @@ export function WritingScreen({
     id: number;
     action: FormattingAction;
   }>();
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"txt" | "pdf" | null>(null);
   const [kind, setKind] = useState<WritingItemKind>("chapter");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingVersion, setEditingVersion] = useState<number | undefined>(
@@ -611,7 +608,7 @@ export function WritingScreen({
   };
   const exportFile = async (format: "txt" | "pdf") => {
     if (exporting) return;
-    setExporting(true);
+    setExporting(format);
     setErrorBanner(null);
     try {
       if (format === "txt") await exportWritingAsTxt(title, content);
@@ -626,7 +623,7 @@ export function WritingScreen({
         e instanceof Error ? e.message : "Falha ao exportar arquivo.",
       );
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
   const clearRecovery = async () => {
@@ -719,11 +716,11 @@ export function WritingScreen({
   const wordCount = useMemo(() => countWords(content), [content]);
   const readingMinutes = Math.max(1, Math.ceil(wordCount / 200));
 
-  const bgMain = isDark ? "#120e17" : "#f3ccde";
-  const bgCard = isDark ? "#1a1120" : "#fcf8f2";
-  const bgChip = isDark ? "#24172d" : "#ffffff";
+  const bgMain = isDark ? "#120e17" : "#fcf8f2";
+  const bgCard = isDark ? "#1a1321" : "#fcf8f2";
+  const bgChip = isDark ? "#221a2b" : "#ffffff";
   const textMain = isDark ? "#f5f5f4" : "#1c1917";
-  const textMuted = isDark ? "#a8a29e" : "#57534e";
+  const textMuted = isDark ? "#c6bdc9" : "#655c63";
   const accent = isDark ? "#9d174d" : "#4b1d3f";
 
   const lineHeight =
@@ -968,29 +965,31 @@ export function WritingScreen({
             </View>
           )}
 
-          <View style={styles.row}>
-            {(
-              [
-                "draft",
-                "in_review",
-                "published",
-                "archived",
-              ] as WritingItemStatus[]
-            ).map((value) => (
-              <Button
-                key={value}
-                disabled={saving || hydrating}
-                mode={status === value ? "contained" : "outlined"}
-                onPress={() => {
-                  setStatus(value);
-                  setKind(value === "draft" ? "draft" : "chapter");
-                  setIsSaved(false);
-                }}
-              >
-                {getStatusLabel(value)}
-              </Button>
-            ))}
-          </View>
+          {!isFocus && (
+            <View style={styles.row}>
+              {(
+                [
+                  "draft",
+                  "in_review",
+                  "published",
+                  "archived",
+                ] as WritingItemStatus[]
+              ).map((value) => (
+                <Button
+                  key={value}
+                  disabled={saving || hydrating}
+                  mode={status === value ? "contained" : "outlined"}
+                  onPress={() => {
+                    setStatus(value);
+                    setKind(value === "draft" ? "draft" : "chapter");
+                    setIsSaved(false);
+                  }}
+                >
+                  {getStatusLabel(value)}
+                </Button>
+              ))}
+            </View>
+          )}
           <ScrollView horizontal>
             <View style={styles.row}>
               {(
@@ -1031,21 +1030,54 @@ export function WritingScreen({
           </ScrollView>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={[styles.row, { flexWrap: "nowrap" }]}>
-              <Button
-                icon="file-document-outline"
-                disabled={exporting || hydrating}
-                loading={exporting}
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Exportar TXT"
+                accessibilityState={{
+                  disabled: Boolean(exporting) || hydrating,
+                  busy: exporting === "txt",
+                }}
+                style={[
+                  styles.chipBtn,
+                  {
+                    backgroundColor: bgCard,
+                    opacity: exporting || hydrating ? 0.55 : 1,
+                  },
+                ]}
+                disabled={Boolean(exporting) || hydrating}
                 onPress={() => void exportFile("txt")}
               >
-                TXT
-              </Button>
-              <Button
-                icon="file-pdf-box"
-                disabled={exporting || hydrating}
+                {exporting === "txt" ? (
+                  <ActivityIndicator size={14} color={textMain} />
+                ) : (
+                  <FileText size={14} color={textMain} />
+                )}
+                <Text style={[styles.chipLabel, { color: textMain }]}>TXT</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Exportar PDF"
+                accessibilityState={{
+                  disabled: Boolean(exporting) || hydrating,
+                  busy: exporting === "pdf",
+                }}
+                style={[
+                  styles.chipBtn,
+                  {
+                    backgroundColor: bgCard,
+                    opacity: exporting || hydrating ? 0.55 : 1,
+                  },
+                ]}
+                disabled={Boolean(exporting) || hydrating}
                 onPress={() => void exportFile("pdf")}
               >
-                PDF
-              </Button>
+                {exporting === "pdf" ? (
+                  <ActivityIndicator size={14} color={textMain} />
+                ) : (
+                  <FileDown size={14} color={textMain} />
+                )}
+                <Text style={[styles.chipLabel, { color: textMain }]}>PDF</Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.chipBtn, { backgroundColor: bgCard }]}
                 onPress={() => setShowTypography((prev) => !prev)}

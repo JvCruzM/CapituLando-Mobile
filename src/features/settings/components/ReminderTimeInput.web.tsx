@@ -1,4 +1,4 @@
-import { TextInput } from "react-native-paper";
+import { TextInput } from "../../../shared/components/Controls";
 
 export function ReminderTimeInput({
   value,

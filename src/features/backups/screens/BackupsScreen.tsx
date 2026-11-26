@@ -1,14 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Dialog,
-  HelperText,
-  Portal,
-  Text,
-  TextInput,
-  useTheme,
-} from "react-native-paper";
+import { Dialog, HelperText, Portal, Text, useTheme } from "react-native-paper";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import { accountErrorMessage } from "../../../shared/api/account";
 import { useAuthStore } from "../../auth/session";
@@ -193,7 +186,7 @@ export function BackupsScreen() {
               disabled={destructive.isPending}
             />
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
             <Button
               disabled={destructive.isPending}
               onPress={() => setAction(null)}

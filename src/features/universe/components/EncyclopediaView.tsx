@@ -1,5 +1,5 @@
 import { UniverseImage } from "./UniverseImage";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";

@@ -1,16 +1,10 @@
 import { Stack } from "expo-router";
-import { useTheme } from "react-native-paper";
+import { useStackOptions } from "../../shared/navigation/useStackOptions";
 
 export default function AccountLayout() {
-  const theme = useTheme();
+  const options = useStackOptions();
   return (
-    <Stack
-      screenOptions={{
-        headerStyle: { backgroundColor: theme.colors.surface },
-        headerTintColor: theme.colors.onSurface,
-        contentStyle: { backgroundColor: theme.colors.background },
-      }}
-    >
+    <Stack screenOptions={options}>
       <Stack.Screen name="perfil" options={{ title: "Meu perfil" }} />
       <Stack.Screen name="configuracoes" options={{ title: "Configurações" }} />
       <Stack.Screen name="backups" options={{ title: "Backups" }} />

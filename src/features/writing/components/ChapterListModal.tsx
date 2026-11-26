@@ -1,7 +1,7 @@
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RichTextEditor } from "./RichTextEditor";
 import { plainText } from "./editor-content";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Modal,
   View,
@@ -49,11 +49,11 @@ export function ChapterListModal({
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const bgMain = isDark ? "#120e17" : "#f3ccde";
-  const bgCard = isDark ? "#1a1120" : "#fcf8f2";
-  const bgItem = isDark ? "#24172d" : "#ffffff";
+  const bgMain = isDark ? "#120e17" : "#fcf8f2";
+  const bgCard = isDark ? "#1a1321" : "#fcf8f2";
+  const bgItem = isDark ? "#221a2b" : "#ffffff";
   const textPrimary = isDark ? "#f5f5f4" : "#1c1917";
-  const textMuted = isDark ? "#a8a29e" : "#57534e";
+  const textMuted = isDark ? "#c6bdc9" : "#655c63";
   const accent = isDark ? "#9d174d" : "#4b1d3f";
 
   const requestId = useRef(0);

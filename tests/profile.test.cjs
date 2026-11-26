@@ -13,7 +13,13 @@ function load(path, mocks) {
     },
   }).outputText;
   new Function("require", "module", "exports", code)(
-    (name) => (Object.hasOwn(mocks, name) ? mocks[name] : require(name)),
+    (name) =>
+      name.endsWith("/shared/components/Controls") &&
+      mocks["react-native-paper"]
+        ? mocks["react-native-paper"]
+        : Object.hasOwn(mocks, name)
+          ? mocks[name]
+          : require(name),
     module,
     module.exports,
   );

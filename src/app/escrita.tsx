@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocalSearchParams, router } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Text } from "react-native-paper";
+import { Text } from "react-native-paper";
+import { Button } from "../shared/components/Controls";
 import { useAuthStore } from "../features/auth/session";
 import { WritingScreen, fetchStoriesFromApi } from "../features/writing";
 import { AccountQueryStatus } from "../shared/components/AccountQueryStatus";

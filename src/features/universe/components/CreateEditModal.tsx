@@ -1,17 +1,17 @@
 import { StableFormInput as TextInput } from "./StableFormInput";
 import { UniverseImage } from "./UniverseImage";
-import React, { useState, useEffect } from "react";
-import { Image, ScrollView, StyleSheet, View } from "react-native";
+import { useState, useEffect } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import {
-  Button,
   Chip,
   Dialog,
   HelperText,
   Portal,
-  SegmentedButtons,
   Text,
   useTheme,
 } from "react-native-paper";
+import { SegmentedButtons } from "../../../shared/components/Controls";
+import { Button } from "../../../shared/components/Controls";
 import type {
   EncyclopediaCategory,
   EncyclopediaItem,
@@ -1395,6 +1395,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   actions: {
+    flexWrap: "wrap",
+    gap: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
   },

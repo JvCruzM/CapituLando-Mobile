@@ -8,7 +8,6 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
-  Button,
   Card,
   Dialog,
   HelperText,
@@ -16,6 +15,7 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
+import { Button } from "../../../shared/components/Controls";
 import { useAuthStore } from "../../auth/session";
 import {
   accountRequest,
@@ -173,7 +173,7 @@ export default function ChaptersScreen() {
               </HelperText>
             )}
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
             <Button
               disabled={remove.isPending}
               onPress={() => setDeleting(null)}

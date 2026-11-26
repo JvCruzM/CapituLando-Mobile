@@ -1,1 +1,1 @@
-export { default } from '../features/ideas/screens/IdeasScreen';
+export { default } from "../features/ideas/screens/IdeasScreen";

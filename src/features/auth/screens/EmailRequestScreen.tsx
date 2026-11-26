@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
-import { Button, HelperText, Text, TextInput } from "react-native-paper";
+import { HelperText, Text } from "react-native-paper";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import { authErrorMessage, requestAccountEmail } from "../services/auth-api";
 

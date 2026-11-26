@@ -1,1 +1,1 @@
-export { TextInput as StableFormInput } from "react-native-paper";
+export { TextInput as StableFormInput } from "../../../shared/components/Controls";

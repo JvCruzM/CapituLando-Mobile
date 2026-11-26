@@ -1,8 +1,6 @@
 import { UniverseImage } from "./UniverseImage";
-import React from "react";
-import { Image, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import {
-  Button,
   Chip,
   Dialog,
   Divider,
@@ -11,6 +9,7 @@ import {
   Text,
   useTheme,
 } from "react-native-paper";
+import { Button } from "../../../shared/components/Controls";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import type {
   EncyclopediaItem,
@@ -615,6 +614,8 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   actions: {
+    flexWrap: "wrap",
+    gap: 8,
     paddingHorizontal: 16,
     paddingBottom: 12,
   },

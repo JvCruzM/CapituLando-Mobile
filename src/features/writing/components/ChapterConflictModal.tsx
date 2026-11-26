@@ -38,10 +38,10 @@ export function ChapterConflictModal({
   onOverwrite,
 }: Props) {
   if (!chapter) return null;
-  const background = isDark ? "#1a1120" : "#fcf8f2";
-  const box = isDark ? "#24172d" : "#ffffff";
+  const background = isDark ? "#1a1321" : "#fcf8f2";
+  const box = isDark ? "#221a2b" : "#ffffff";
   const text = isDark ? "#f5f5f4" : "#1c1917";
-  const muted = isDark ? "#a8a29e" : "#57534e";
+  const muted = isDark ? "#c6bdc9" : "#655c63";
   const accent = isDark ? "#9d174d" : "#4b1d3f";
   const actions = [
     {

@@ -13,7 +13,13 @@ function load(file, mocks = {}) {
   }).outputText;
   const module = { exports: {} };
   new Function("require", "module", "exports", code)(
-    (name) => (Object.hasOwn(mocks, name) ? mocks[name] : require(name)),
+    (name) =>
+      name.endsWith("/shared/components/Controls") &&
+      mocks["react-native-paper"]
+        ? mocks["react-native-paper"]
+        : Object.hasOwn(mocks, name)
+          ? mocks[name]
+          : require(name),
     module,
     module.exports,
   );
@@ -1156,4 +1162,204 @@ test("ponte nativa continua executável quando o motor não fornece o código-fo
   assert.doesNotThrow(
     () => new Function("window", "document", module.exports.editorBridge),
   );
+});
+
+function writingToolbar() {
+  const values = [],
+    refs = [],
+    exports = [];
+  let cursor = 0,
+    refCursor = 0,
+    finishExport;
+  const hooks = {
+    useState(initial) {
+      const i = cursor++;
+      if (!(i in values)) values[i] = i === 0 ? false : initial;
+      return [
+        values[i],
+        (next) => {
+          values[i] = typeof next === "function" ? next(values[i]) : next;
+        },
+      ];
+    },
+    useRef(initial) {
+      return refs[refCursor++] ?? (refs[refCursor - 1] = { current: initial });
+    },
+    useEffect() {},
+    useMemo: (fn) => fn(),
+    useCallback: (fn) => fn,
+  };
+  const store = {
+    countWords: () => 0,
+    getStatusLabel: (status) =>
+      ({
+        draft: "Rascunho",
+        in_review: "Em revisão",
+        published: "Publicado",
+        archived: "Arquivado",
+      })[status],
+  };
+  const { WritingScreen } = load(
+    "src/features/writing/screens/WritingScreen.tsx",
+    {
+      react: hooks,
+      "react-native": {
+        View: "View",
+        Text: "Text",
+        TextInput: "TextInput",
+        TouchableOpacity: "TouchableOpacity",
+        ScrollView: "ScrollView",
+        ActivityIndicator: "ActivityIndicator",
+        SafeAreaView: "SafeAreaView",
+        KeyboardAvoidingView: "KeyboardAvoidingView",
+        StyleSheet: { create: (styles) => styles },
+        Platform: { OS: "android", select: (choices) => choices.android },
+        Share: { share: async () => {} },
+      },
+      "lucide-react-native": new Proxy({}, { get: (_, name) => String(name) }),
+      "react-native-paper": {
+        useTheme: () => ({ dark: false }),
+        Button: "Button",
+        Portal: "Portal",
+        Dialog: Object.assign(() => null, {
+          Title: "Dialog.Title",
+          Content: "Dialog.Content",
+          Actions: "Dialog.Actions",
+        }),
+      },
+      "expo-clipboard": { setStringAsync: async () => {} },
+      "../writing-store": store,
+      "../../auth/session": {
+        useAuthStore: {
+          getState: () => ({ session: { sessionId: "session" } }),
+        },
+      },
+      "../components/editor-content": editor,
+      "../components/ChapterListModal": {
+        ChapterListModal: "ChapterListModal",
+      },
+      "../components/ChapterConflictModal": {
+        ChapterConflictModal: "ChapterConflictModal",
+      },
+      "../components/SessionConflictModal": {
+        SessionConflictModal: "SessionConflictModal",
+      },
+      "../components/RichTextEditor": { RichTextEditor: "RichTextEditor" },
+      "../export-writing": {
+        exportWritingAsTxt: async (...args) => {
+          exports.push({ format: "txt", args });
+          await new Promise((resolve) => {
+            finishExport = resolve;
+          });
+        },
+        exportWritingAsPdf: async (...args) => {
+          exports.push({ format: "pdf", args });
+          await new Promise((resolve) => {
+            finishExport = resolve;
+          });
+        },
+      },
+    },
+  );
+  const nodes = (tree) =>
+    Array.isArray(tree)
+      ? tree.flatMap(nodes)
+      : tree && typeof tree === "object"
+        ? [tree, ...nodes(tree.props?.children)]
+        : [];
+  const text = (tree) =>
+    typeof tree === "string"
+      ? tree
+      : Array.isArray(tree)
+        ? tree.map(text).join("")
+        : tree?.props
+          ? text(tree.props.children)
+          : "";
+  let tree;
+  return {
+    render() {
+      cursor = 0;
+      refCursor = 0;
+      tree = WritingScreen({
+        userId: "owner",
+        storyId: "book",
+        stories: [{ id: "book", title: "Livro" }],
+      });
+      return tree;
+    },
+    control(label) {
+      return nodes(tree).find(
+        (node) =>
+          node.props?.onPress &&
+          (node.props.accessibilityLabel === label || text(node) === label),
+      );
+    },
+    editor() {
+      return nodes(tree).find((node) => node.type === "RichTextEditor");
+    },
+    get exports() {
+      return exports;
+    },
+    finish() {
+      finishExport();
+    },
+  };
+}
+
+test("modo foco oculta os estados e ao sair preserva o estado e o texto do capítulo", () => {
+  const ui = writingToolbar();
+  ui.render();
+  assert(ui.control("Em revisão"));
+  ui.control("Publicado").props.onPress();
+  ui.render();
+  const contentProp =
+    ui.editor().props.onChange ?? ui.editor().props.onChangeText;
+  assert.equal(typeof contentProp, "function");
+  contentProp("<p>Minha história</p>");
+  ui.render();
+  ui.control("Modo Foco").props.onPress();
+  ui.render();
+  for (const status of ["Rascunho", "Em revisão", "Publicado", "Arquivado"])
+    assert(!ui.control(status));
+  assert.equal(
+    ui.editor().props.value ?? ui.editor().props.content,
+    "<p>Minha história</p>",
+  );
+  ui.control("Sair do Foco").props.onPress();
+  ui.render();
+  assert.equal(ui.control("Publicado").props.mode, "contained");
+  assert.equal(
+    ui.editor().props.value ?? ui.editor().props.content,
+    "<p>Minha história</p>",
+  );
+});
+
+test("TXT e PDF usam controles do editor e mostram carregamento somente no formato escolhido", async () => {
+  const ui = writingToolbar();
+  ui.render();
+  for (const format of ["TXT", "PDF"]) {
+    const button = ui.control("Exportar " + format);
+    assert.equal(button.type, ui.control("Tipografia").type);
+    const pending = button.props.onPress();
+    ui.render();
+    assert.equal(
+      ui.control("Exportar " + format).props.accessibilityState.busy,
+      true,
+    );
+    assert.equal(
+      ui.control("Exportar " + (format === "TXT" ? "PDF" : "TXT")).props
+        .accessibilityState.busy,
+      false,
+    );
+    assert(
+      ui.control("Exportar TXT").props.disabled &&
+        ui.control("Exportar PDF").props.disabled,
+    );
+    ui.finish();
+    await new Promise(setImmediate);
+    await pending;
+    ui.render();
+    assert.equal(ui.exports.at(-1).format, format.toLowerCase());
+    assert.equal(ui.control("Exportar " + format).props.disabled, false);
+  }
 });

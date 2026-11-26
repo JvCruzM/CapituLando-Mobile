@@ -1,16 +1,9 @@
 import { useState } from "react";
 import { router } from "expo-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Card,
-  Dialog,
-  HelperText,
-  Portal,
-  SegmentedButtons,
-  Text,
-  TextInput,
-} from "react-native-paper";
+import { Card, Dialog, HelperText, Portal, Text } from "react-native-paper";
+import { SegmentedButtons } from "../../../shared/components/Controls";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
 import {
@@ -215,7 +208,7 @@ export default function StoriesScreen() {
               </HelperText>
             )}
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
             <Button disabled={busy} onPress={() => setDeleting(null)}>
               Cancelar
             </Button>

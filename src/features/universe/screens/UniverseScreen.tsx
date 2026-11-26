@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Chip,
-  Dialog,
-  HelperText,
-  Portal,
-  Searchbar,
-  SegmentedButtons,
-  Text,
-} from "react-native-paper";
+import { Chip, Dialog, HelperText, Portal, Text } from "react-native-paper";
+import { SegmentedButtons } from "../../../shared/components/Controls";
+import { Searchbar } from "../../../shared/components/Controls";
+import { Button } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
 import { accountErrorMessage } from "../../../shared/api/account";
@@ -567,7 +561,7 @@ function UniverseContent({ ownerId }: { ownerId: string }) {
               </HelperText>
             ) : null}
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
             <Button disabled={busy} onPress={() => setDeleting(null)}>
               Cancelar
             </Button>

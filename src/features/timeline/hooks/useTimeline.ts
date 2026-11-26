@@ -8,7 +8,6 @@ import {
   updateEvent,
 } from "../../events/services/eventService";
 import {
-  addEventCharacter,
   listEventCharacters,
   removeEventCharacter,
 } from "../../event-characters/services/eventCharacterService";

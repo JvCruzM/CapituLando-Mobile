@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import { View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Button,
   Card,
   Chip,
   Dialog,
@@ -10,8 +9,8 @@ import {
   Menu,
   Portal,
   Text,
-  TextInput,
 } from "react-native-paper";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
 import { accountErrorMessage } from "../../../shared/api/account";
@@ -563,7 +562,7 @@ export function CollectionScreen({ section }: { section: "ideas" | "goals" }) {
             </Text>
             {error && <HelperText type="error">{error}</HelperText>}
           </Dialog.Content>
-          <Dialog.Actions>
+          <Dialog.Actions style={{ flexWrap: "wrap", gap: 8 }}>
             <Button disabled={data.busy} onPress={() => setDeleting(null)}>
               Cancelar
             </Button>

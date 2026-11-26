@@ -1,15 +1,9 @@
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
-import {
-  Card,
-  Chip,
-  Surface,
-  Text,
-  SegmentedButtons,
-  useTheme,
-} from "react-native-paper";
+import { Card, Chip, Surface, Text, useTheme } from "react-native-paper";
+import { SegmentedButtons } from "../../../shared/components/Controls";
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
-import { useUniverseStore, useUniverseStats } from "../universe-store";
+import { useUniverseStore } from "../universe-store";
 import { TIMELINE_IMPORTANCE_COLORS } from "../constants";
 import type { TimelineEventItem } from "../types";
 
@@ -29,7 +23,6 @@ export function TimelineView({
   const selectedEra = useUniverseStore((state) => state.selectedEra);
   const setSelectedEra = useUniverseStore((state) => state.setSelectedEra);
   const searchQuery = useUniverseStore((state) => state.searchQuery);
-  const stats = useUniverseStats();
 
   // Distinct Eras list
   const eras = useMemo(() => {

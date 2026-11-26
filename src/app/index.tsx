@@ -1,115 +1,112 @@
-import { Image } from "react-native";
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { router } from "expo-router";
-import { Button, HelperText, Text } from "react-native-paper";
+import { Image, View } from "react-native";
+import { Redirect, router } from "expo-router";
+import { Card, HelperText, Icon, Text, useTheme } from "react-native-paper";
+import { Button } from "../shared/components/Controls";
+import { useUIStore } from "../shared/store/ui-store";
 import { Screen } from "../shared/components/Screen";
-import { useAuthStore, refreshAuthSession } from "../features/auth/session";
-import { loadProfile } from "../features/profile/services/profile-api";
-import { ProfileAvatar } from "../shared/components/ProfileAvatar";
-
-export default function HomeScreen() {
+import { useAuthStore } from "../features/auth/session";
+export default function WelcomeScreen() {
   const session = useAuthStore((state) => state.session);
-  const signingOut = useAuthStore((state) => state.isSigningOut);
-  const sessionError = useAuthStore((state) => state.sessionError);
-  const refreshing = useAuthStore((state) => state.isRefreshing);
-  const client = useQueryClient();
-  const [logoutNotice, setLogoutNotice] = useState("");
-  const profile = useQuery({
-    queryKey: ["profile", session?.user.id ?? ""],
-    queryFn: ({ signal }) => loadProfile(signal),
-    enabled: Boolean(session),
-  });
+  const theme = useTheme();
+  const logoutNotice = useUIStore((state) => state.logoutNotice);
+  const setLogoutNotice = useUIStore((state) => state.setLogoutNotice);
+  if (session) return <Redirect href="/painel" />;
   return (
     <Screen>
+      {logoutNotice ? (
+        <Card mode="outlined">
+          <Card.Content>
+            <HelperText type="error" accessibilityLiveRegion="polite">
+              {logoutNotice}
+            </HelperText>
+          </Card.Content>
+          <Card.Actions>
+            <Button onPress={() => setLogoutNotice("")}>Fechar aviso</Button>
+          </Card.Actions>
+        </Card>
+      ) : null}
       <Image
         source={require("../../assets/brand/capitulando-logo.png")}
         accessibilityLabel="CapituLando"
         resizeMode="contain"
-        style={{ width: "100%", height: 110 }}
+        style={{ width: "100%", height: 120 }}
       />
-      <Text variant="headlineMedium">Cada história começa com uma ideia.</Text>
-      <Text variant="bodyLarge">
-        Seu espaço para escrever e construir universos, agora no celular.
-      </Text>
-      {session ? (
-        <>
-          <Button
-            mode="contained"
-            icon="view-dashboard"
-            onPress={() => router.push("/painel")}
-          >
-            Meu espaço de escrita
-          </Button>
-          <Button onPress={() => router.push("/historias")}>
-            Minhas histórias
-          </Button>
-          <Button onPress={() => router.push("/escrita")}>Escrever</Button>
-          <Button
-            mode="contained-tonal"
-            icon="book-open-page-variant"
-            accessibilityLabel="Enciclopédia, Personagens & Cronologia"
-            onPress={() => router.push("/enciclopedia")}
-          >
-            Enciclopédia, Personagens & Cronologia
-          </Button>
-          <Text variant="titleMedium">
-            Olá, {profile.data?.displayName ?? session.user.displayName}
-          </Text>
-          <ProfileAvatar
-            uri={profile.data?.avatarImage}
-            name={profile.data?.displayName ?? session.user.displayName}
-          />
-          <Button onPress={() => router.push("/perfil")}>Meu perfil</Button>
-          <Button onPress={() => router.push("/configuracoes")}>
-            Configurações
-          </Button>
-          <Button onPress={() => router.push("/backups")}>Backups</Button>
-          <Button
-            disabled={signingOut}
-            loading={signingOut}
-            onPress={() => {
-              setLogoutNotice("");
-              void useAuthStore.getState().logout().then(setLogoutNotice);
-            }}
-          >
-            Encerrar sessão
-          </Button>
-        </>
-      ) : (
-        <Button mode="contained" onPress={() => router.push("/entrar")}>
-          Entrar
-        </Button>
-      )}
-      {sessionError || logoutNotice ? (
-        <HelperText type="error" accessibilityLiveRegion="polite">
-          {sessionError || logoutNotice}
-        </HelperText>
-      ) : null}
-      {session && sessionError ? (
+      <View
+        style={{
+          backgroundColor: theme.colors.primaryContainer,
+          borderRadius: 24,
+          padding: 24,
+          gap: 18,
+        }}
+      >
+        <Text
+          variant="labelLarge"
+          style={{ color: theme.colors.onPrimaryContainer, letterSpacing: 2 }}
+        >
+          UM LUGAR PARA SUAS HISTÓRIAS
+        </Text>
+        <Text
+          variant="displaySmall"
+          style={{ color: theme.colors.onPrimaryContainer }}
+        >
+          Cada história começa com uma ideia.
+        </Text>
+        <Text
+          variant="bodyLarge"
+          style={{ color: theme.colors.onPrimaryContainer }}
+        >
+          Escreva no seu ritmo. Guarde suas ideias e dê vida a universos que só
+          você pode criar.
+        </Text>
         <Button
-          accessibilityLabel="Tentar renovar sessão"
-          accessibilityState={{ busy: refreshing }}
-          disabled={refreshing || signingOut}
-          loading={refreshing}
-          onPress={() => {
-            const version = useAuthStore.getState().sessionVersion;
-            void refreshAuthSession()
-              .then((current) => {
-                if (useAuthStore.getState().sessionVersion === version)
-                  return client.invalidateQueries({
-                    predicate: (query) =>
-                      query.queryKey.includes(current.user.id),
-                    refetchType: "all",
-                  });
-              })
-              .catch(() => undefined);
+          mode="contained"
+          icon="feather"
+          onPress={() => router.push("/entrar")}
+        >
+          Entrar no meu espaço
+        </Button>
+        <Button mode="outlined" onPress={() => router.push("/cadastro")}>
+          Criar minha conta
+        </Button>
+      </View>
+      <Text variant="headlineSmall">Da primeira ideia ao último capítulo</Text>
+      {(
+        [
+          [
+            "notebook-outline",
+            "Escreva com liberdade",
+            "Capítulos, rascunhos e um espaço para encontrar sua voz.",
+          ],
+          [
+            "earth",
+            "Construa seu universo",
+            "Personagens, lugares e acontecimentos conectados à sua história.",
+          ],
+          [
+            "lightbulb-on-outline",
+            "Cultive suas ideias",
+            "Inspirações e metas para acompanhar cada passo da escrita.",
+          ],
+        ] as const
+      ).map(([icon, title, description]) => (
+        <Card
+          key={title}
+          mode="outlined"
+          style={{
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.outlineVariant,
           }}
         >
-          {refreshing ? "Renovando sessão…" : "Tentar renovar sessão"}
-        </Button>
-      ) : null}
-      <Button onPress={() => router.push("/sobre")}>
+          <Card.Content style={{ gap: 10 }}>
+            <Icon source={icon} size={26} color={theme.colors.primary} />
+            <Text variant="titleMedium">{title}</Text>
+            <Text style={{ color: theme.colors.onSurfaceVariant }}>
+              {description}
+            </Text>
+          </Card.Content>
+        </Card>
+      ))}
+      <Button icon="information-outline" onPress={() => router.push("/sobre")}>
         Sobre o projeto e a equipe
       </Button>
     </Screen>

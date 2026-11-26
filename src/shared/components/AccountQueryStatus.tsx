@@ -1,4 +1,5 @@
-import { ActivityIndicator, Button, HelperText } from "react-native-paper";
+import { ActivityIndicator, HelperText } from "react-native-paper";
+import { Button } from "./Controls";
 import { Screen } from "./Screen";
 import { accountErrorMessage } from "../api/account";
 import { useAuthStore } from "../../features/auth/session";

@@ -3,14 +3,9 @@ import { Platform } from "react-native";
 import { router } from "expo-router";
 import axios from "axios";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  HelperText,
-  SegmentedButtons,
-  Switch,
-  Text,
-  TextInput,
-} from "react-native-paper";
+import { HelperText, Switch, Text } from "react-native-paper";
+import { SegmentedButtons } from "../../../shared/components/Controls";
+import { Button, TextInput } from "../../../shared/components/Controls";
 import { Screen } from "../../../shared/components/Screen";
 import { ReminderTimeInput } from "../components/ReminderTimeInput";
 import { AccountQueryStatus } from "../../../shared/components/AccountQueryStatus";
