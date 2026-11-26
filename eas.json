@@ -1,39 +1,5 @@
 {
   "cli": {
-    "version": ">= 27.10.0",
-    "appVersionSource": "remote"
-  },
-  "build": {
-    "development": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "channel": "development"
-    },
-    "preview": {
-      "distribution": "internal",
-      "channel": "preview",
-      "android": {
-        "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://capitu-lando-mobile-backend.vercel.app"
-      }
-    },
-    "production": {
-      "autoIncrement": true,
-      "channel": "production",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://capitu-lando-mobile-backend.vercel.app"
-      }
-    },
-    "preview-simulator": {
-      "extends": "preview",
-      "ios": {
-        "simulator": true
-      }
-    }
-  },
-  "submit": {
-    "production": {}
+    "version": ">= 27.10.0"
   }
 }
