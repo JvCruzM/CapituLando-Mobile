@@ -1,3 +1,4 @@
+import { dashboardKey } from "../../home/services/dashboard-api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { accountRequest } from "../../../shared/api/account";
 import { useAuthStore } from "../../auth/session";
@@ -50,8 +51,10 @@ export function useWorkspaceSection<T>(section: string) {
       });
     },
     onSuccess: (doc) => {
-      if (useAuthStore.getState().session?.user.id === ownerId)
+      if (useAuthStore.getState().session?.user.id === ownerId) {
         client.setQueryData(key, doc);
+        void client.invalidateQueries({ queryKey: dashboardKey(ownerId) });
+      }
     },
     onError: () => void client.invalidateQueries({ queryKey: key }),
   });
