@@ -89,6 +89,7 @@ function collection(section, initial = [], preferences = { goalAlerts: true }) {
     pause = null,
     calls = 0;
   const hooks = {
+    useCallback: (callback) => callback,
     useState(initial) {
       const i = cursor++;
       if (!(i in slots))
@@ -124,11 +125,15 @@ function collection(section, initial = [], preferences = { goalAlerts: true }) {
       revision++;
       return { value: items, revision };
     },
+    async remove(id) {
+      return this.update((records) => records.filter((item) => item.id !== id));
+    },
   };
   const { CollectionScreen } = load(
     "src/features/workspace/screens/CollectionScreen.tsx",
     {
       react: hooks,
+      "expo-router": { useFocusEffect: () => {} },
       "react-native": { View: "View" },
       "react-native-paper": ui,
       "@tanstack/react-query": {
@@ -516,4 +521,85 @@ test("salvar ideias invalida o painel da mesma conta; resposta de outra conta n�
   await mutation.onSuccess({ revision: 5, value: [] });
   assert.equal(cache.length, 1);
   assert.equal(invalidations.length, 1);
+});
+
+test("excluir consulta a versão atual, preserva registros novos e aceita item já ausente", async () => {
+  const requests = [],
+    cache = [];
+  let owner = "owner";
+  let remote = {
+    revision: 7,
+    value: [{ id: "new", projectId: "book", content: "Nova de outra sessão" }],
+  };
+  const useAuthStore = (select) => select({ session: { user: { id: owner } } });
+  useAuthStore.getState = () => ({ session: { user: { id: owner } } });
+  const api = load("src/features/workspace/services/workspace-api.ts", {
+    "@tanstack/react-query": {
+      useQuery: () => ({
+        data: {
+          revision: 1,
+          value: [{ id: "old", projectId: "deleted", content: "Cache antigo" }],
+        },
+      }),
+      useQueryClient: () => ({
+        setQueryData: (key, doc) => cache.push(doc),
+        invalidateQueries: async () => {},
+      }),
+      useMutation: (config) => ({
+        mutateAsync: async (change) => {
+          const result = await config.mutationFn(change);
+          config.onSuccess(result);
+          return result;
+        },
+      }),
+    },
+    "../../../shared/api/account": {
+      accountRequest: async (config) => {
+        requests.push(config);
+        if (!config.method) return remote;
+        assert.equal(config.data.revision, remote.revision);
+        remote = { revision: remote.revision + 1, value: config.data.value };
+        return remote;
+      },
+    },
+    "../../auth/session": { useAuthStore },
+    "../../home/services/dashboard-api": {
+      dashboardKey: (id) => ["dashboard", id],
+    },
+  });
+  const hook = api.useWorkspaceSection("ideas");
+  await hook.remove("old");
+  assert.equal(requests[0].method, undefined);
+  assert.equal(requests[1].method, "PUT");
+  assert.deepEqual(
+    remote.value.map((item) => item.id),
+    ["new"],
+  );
+  assert.deepEqual(cache[0], remote);
+  await hook.remove("new");
+  assert.deepEqual(remote.value, []);
+  const count = requests.length;
+  owner = "other";
+  await assert.rejects(hook.remove("old"), /sessão mudou/);
+  assert.equal(requests.length, count);
+});
+
+test("excluir ideias e metas fecha o diálogo e remove somente o registro confirmado", async () => {
+  for (const section of ["ideas", "goals"]) {
+    const record =
+      section === "ideas"
+        ? { id: "one", projectId: "a", content: "Ideia" }
+        : { id: "one", title: "Meta", current: 0, target: 5, unit: "palavras" };
+    const env = collection(section, [record, { ...record, id: "two" }]);
+    env.press("Excluir", env.card("one"));
+    const dialog = nodes(env.tree).find((n) => n.props?.visible === true);
+    assert(dialog);
+    env.press("Excluir", dialog);
+    await env.flush();
+    assert.deepEqual(
+      env.items.map((item) => item.id),
+      ["two"],
+    );
+    assert(!nodes(env.tree).some((n) => n.props?.visible === true));
+  }
 });

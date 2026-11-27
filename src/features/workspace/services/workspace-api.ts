@@ -18,14 +18,14 @@ export interface WorkspaceGoal {
 }
 export interface WorkspaceIdea {
   id: string;
-  projectId: string;
+  projectId?: string | null;
   content: string;
   category?: string | null;
   createdAt?: string;
 }
 export const workspaceKey = (ownerId: string, section: string) =>
   ["workspace", ownerId, section] as const;
-export function useWorkspaceSection<T>(section: string) {
+export function useWorkspaceSection<T extends { id: string }>(section: string) {
   const ownerId = useAuthStore((s) => s.session?.user.id ?? "");
   const client = useQueryClient();
   const key = workspaceKey(ownerId, section);
@@ -39,14 +39,29 @@ export function useWorkspaceSection<T>(section: string) {
       }),
   });
   const mutation = useMutation({
-    mutationFn: async (update: (items: T[]) => T[]) => {
-      if (!query.data) throw new Error("Aguarde o carregamento dos dados.");
+    mutationFn: async (
+      update: ((items: T[]) => T[]) | { removeId: string },
+    ) => {
+      if (useAuthStore.getState().session?.user.id !== ownerId)
+        throw new Error("A sessão mudou. Abra esta tela novamente.");
+      const document =
+        typeof update === "function"
+          ? query.data
+          : await accountRequest<WorkspaceDocument<T>>({
+              url: `/api/workspace/${section}`,
+            });
+      if (!document) throw new Error("Aguarde o carregamento dos dados.");
+      if (useAuthStore.getState().session?.user.id !== ownerId)
+        throw new Error("A sessão mudou. Abra esta tela novamente.");
       return accountRequest<WorkspaceDocument<T>>({
         url: `/api/workspace/${section}`,
         method: "PUT",
         data: {
-          revision: query.data.revision,
-          value: update(query.data.value),
+          revision: document.revision,
+          value:
+            typeof update === "function"
+              ? update(document.value)
+              : document.value.filter((item) => item.id !== update.removeId),
         },
       });
     },
@@ -62,6 +77,7 @@ export function useWorkspaceSection<T>(section: string) {
     ...query,
     items: query.data?.value ?? [],
     update: mutation.mutateAsync,
+    remove: (id: string) => mutation.mutateAsync({ removeId: id }),
     busy: mutation.isPending,
     saveError: mutation.error,
   };

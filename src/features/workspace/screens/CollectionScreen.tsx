@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -41,6 +42,12 @@ export function CollectionScreen({ section }: { section: "ideas" | "goals" }) {
   const goals = section === "goals";
   const data = useWorkspaceSection<WorkspaceGoal | WorkspaceIdea>(section);
   const stories = useStories();
+  useFocusEffect(
+    useCallback(() => {
+      void data.refetch();
+      void stories.refetch();
+    }, [data.refetch, stories.refetch]),
+  );
   const owner = useAuthStore((s) => s.session?.user.id ?? "");
   const settings = useQuery({
     queryKey: settingsKey(owner),
@@ -398,7 +405,7 @@ export function CollectionScreen({ section }: { section: "ideas" | "goals" }) {
                         createdAt: new Date().toISOString(),
                       };
                       await data.update((items) => [idea, ...items]);
-                      setFilterProject(idea.projectId);
+                      setFilterProject(idea.projectId ?? "");
                       setFilterCategory("");
                       setSuggestion(null);
                       setNotice("Sugestão salva como ideia.");
@@ -465,7 +472,10 @@ export function CollectionScreen({ section }: { section: "ideas" | "goals" }) {
       <Button
         disabled={data.busy || data.isFetching}
         loading={data.isFetching}
-        onPress={() => void data.refetch()}
+        onPress={() => {
+          void data.refetch();
+          void stories.refetch();
+        }}
       >
         Atualizar
       </Button>
@@ -571,9 +581,7 @@ export function CollectionScreen({ section }: { section: "ideas" | "goals" }) {
               disabled={data.busy}
               onPress={() =>
                 void run(async () => {
-                  await data.update((items) =>
-                    items.filter((item) => item.id !== deleting),
-                  );
+                  await data.remove(deleting!);
                   if (editing === deleting) reset();
                   setDeleting(null);
                 })
