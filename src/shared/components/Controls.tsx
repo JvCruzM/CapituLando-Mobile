@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useState,
   type ComponentProps,
   type ComponentRef,
 } from "react";
@@ -83,10 +84,19 @@ const Input = forwardRef<
   ComponentRef<typeof PaperInput>,
   ComponentProps<typeof PaperInput>
 >(function TextInput(
-  { style, outlineStyle, contentStyle, mode: _mode, ...props },
+  {
+    style,
+    outlineStyle,
+    contentStyle,
+    mode: _mode,
+    secureTextEntry,
+    right,
+    ...props
+  },
   ref,
 ) {
   const theme = useTheme();
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const attachRef = useCallback(
     (node: ComponentRef<typeof PaperInput> | null) => {
       if (typeof ref === "function") ref(node);
@@ -102,6 +112,20 @@ const Input = forwardRef<
       placeholderTextColor={theme.colors.onSurfaceVariant}
       {...props}
       ref={attachRef}
+      secureTextEntry={secureTextEntry ? !passwordVisible : secureTextEntry}
+      right={
+        secureTextEntry ? (
+          <PaperInput.Icon
+            icon={passwordVisible ? "eye-off" : "eye"}
+            accessibilityLabel={passwordVisible ? "Ocultar senha" : "Exibir senha"}
+            onPress={() => setPasswordVisible((visible) => !visible)}
+            forceTextInputFocus={false}
+            disabled={props.disabled || props.editable === false}
+          />
+        ) : (
+          right
+        )
+      }
       mode="outlined"
       style={[{ backgroundColor: theme.dark ? "#221a2b" : "#fffdf9" }, style]}
       outlineStyle={[{ borderRadius: 12 }, outlineStyle]}
